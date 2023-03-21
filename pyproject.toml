@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "survival-estimation"
+version = "0.0.0"
+description = ""
+authors = ["vlaurent <vlaurent@eurobios.com>"]
+readme = "README.md"
+packages = [{include = "src/"}]
+
+[tool.poetry.dependencies]
+python = "^3"
+matplotlib = "^3"
+seaborn = "*"
+numba = "*"
+scipy = "*"
+scikit-learn = "*"
+pandas = "^1"
+survival-trees={git="https://gitlab.eurobios.com/vlaurent/survival-trees", branch="master"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
