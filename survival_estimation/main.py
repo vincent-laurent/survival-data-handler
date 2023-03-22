@@ -281,20 +281,18 @@ class Lifespan:
         df_matrix["P"] = p = tp + fn
         df_matrix["N"] = n = tn + fp
         df_matrix["Total"] = p + n
-        try:
-            if all(tp + fp > 0):
-                df_matrix["precision"] = precision = tp / (tp + fp)
-            if all(tp + np > 0):
-                df_matrix["recall"] = recall = tp / (tp + fn)
-            df_matrix["accuracy"] = (tp + tn) / (p + n)
+        if all(tp + fp > 0):
+            df_matrix["precision"] = precision = tp / (tp + fp)
+        if all(tp + fp > 0):
+            df_matrix["recall"] = recall = tp / (tp + fn)
+        df_matrix["accuracy"] = (tp + tn) / (p + n)
 
-            if all(tp + np > 0) and all(tp + fp > 0):
-                df_matrix["f1-score"] = 2 * recall * precision / (
-                            recall + precision)
-                df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
-                        2 ** 2 * precision + recall)
-        except:
-            pass
+        if all(tp + fp > 0) and all(tp + fp > 0):
+            df_matrix["f1-score"] = 2 * recall * precision / (
+                        recall + precision)
+            df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
+                    2 ** 2 * precision + recall)
+
         return df_matrix
 
     # ==============================================
