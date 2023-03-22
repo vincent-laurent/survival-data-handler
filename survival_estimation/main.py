@@ -275,19 +275,24 @@ class Lifespan:
 
             df_matrix.loc[c] = metrics.confusion_matrix(*args).ravel()
 
-        df_matrix["P"] = p = df_matrix["TP"] + df_matrix["FN"]
-        df_matrix["N"] = n = df_matrix["TN"] + df_matrix["FP"]
-        df_matrix["Total"] = df_matrix["P"] + df_matrix["N"]
-        df_matrix["precision"] = precision = df_matrix["TP"] / (
-                    df_matrix["FP"] + df_matrix["FP"])
-        df_matrix["recall"] = recall = df_matrix["TP"] / (
-                    df_matrix["TP"] + df_matrix["FN"])
-        df_matrix["accuracy"] = (df_matrix["TP"] + df_matrix["TN"]) / (
-                    p + n)
-        df_matrix["f1-score"] = 2 * recall * precision / (recall + precision)
-        df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
-                    2 ** 2 * precision + recall)
+        tn, fp, fn, tp = df_matrix["TN"], df_matrix["FP"], df_matrix["FN"], \
+            df_matrix["TP"]
 
+        df_matrix["P"] = p = tp + fn
+        df_matrix["N"] = n = tn + fp
+        df_matrix["Total"] = p + n
+
+        if all(tp + fp > 0):
+            df_matrix["precision"] = precision = tp / (tp + fp)
+        if all(tp + np > 0):
+            df_matrix["recall"] = recall = tp / (tp + fn)
+        df_matrix["accuracy"] = (tp + tn) / (p + n)
+
+        if all(tp + np > 0) and all(tp + fp > 0):
+            df_matrix["f1-score"] = 2 * recall * precision / (
+                        recall + precision)
+            df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
+                    2 ** 2 * precision + recall)
         return df_matrix
 
     # ==============================================
