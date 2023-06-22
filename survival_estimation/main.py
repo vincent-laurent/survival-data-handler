@@ -1,3 +1,4 @@
+import typing
 from typing import Callable, Union
 
 import matplotlib.pyplot as plt
@@ -5,6 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from numba import njit, jit
+from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 from sklearn import metrics
 
@@ -13,68 +15,6 @@ from sklearn import metrics
 cmap = sns.color_palette('rainbow', as_cmap=True)
 event_censored_color = cmap(0.1)
 event_observed_color = cmap(0.95)
-
-
-# ==============================================================================
-#                          FOR A NEW PACKAGE
-# ==============================================================================
-def shift_origin(data: pd.DataFrame,
-                 starting_dates: pd.Series,
-                 period,
-                 date_final,
-                 date_initial,
-                 dtypes="float16"
-                 ):
-    """
-    Given a temporal dataframe, this function shift
-    the origin
-    """
-    range_ = np.arange(
-        starting_dates.min(),
-        date_final + period,
-        step=period)
-    data = data[data.columns.sort_values()]
-
-    idx_end, idx_sta = [np.searchsorted(range_, d)
-                        for d in (date_final, date_initial)]
-
-    df_data_date = pd.DataFrame(
-        index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
-    columns_save = df_data_date.columns
-
-    s = np.sort(starting_dates.dropna().unique()).astype(int)
-    s_dates = starting_dates.values.astype(int)
-    columns = df_data_date.columns.astype(int).to_numpy()
-    df_data_date.columns = columns
-    datetime = np.array([int(v.asm8) for v in data.columns.values])
-    values = data.values
-    ret = find_date(s, s_dates, columns, datetime, values)
-
-    for t0, (loc, select_col, v) in ret.items():
-        df_data_date.loc[
-            loc, select_col] = v
-    df_data_date.columns = columns_save
-    return df_data_date
-
-
-@njit
-def find_date(s, s_dates, columns, datetime, values):
-    ret = {}
-    for d in s:
-        loc = s_dates == d
-        idx_start = np.argmin(np.abs((columns - d)))
-        t0 = (columns - d)[0]
-        select_column_input = datetime > t0
-        idx_stop = idx_start + sum(select_column_input) - 1
-        if idx_start == -1:
-            continue
-
-        select_col = columns[idx_start:idx_stop]
-        n_cols = len(select_col)
-        v = values[loc][:, select_column_input][:, :n_cols]
-
-        ret[t0] = loc, select_col, v
-    return ret
 
 
 class Lifespan:
@@ -157,12 +97,12 @@ class Lifespan:
             return ret.loc[index], self.event.loc[index], self.durations.loc[
                 index], entry
 
-    def _shift_helper(self, data: pd.DataFrame):
+    def _shift_helper(self, data: typing.Union[pd.DataFrame, pd.Series]):
         data = pd.merge(self._df_idx_unique["index"].reset_index(), data,
                         right_index=True,
                         left_on='index')
         data = data.set_index(self._index).drop("index", axis=1)
-        ret = shift_origin(
+        ret = shift_from_interp(
             data=data,
             starting_dates=self.starting_dates,
             period=pd.to_timedelta(30, unit="d"),
@@ -176,17 +116,21 @@ class Lifespan:
     # ==============================================
 
     def compute_expected_residual_life(self) -> None:
-        r = self.survival_estimation.residual_life
-        data = self._shift_helper(r)
+        data = pd.Series(self.survival_estimation.residual_life_interp)
+        data.name = "interp"
+        data = self._shift_helper(data)
         self.residual_lifespan = self._decompose_unique(data)[0].astype(
             self.__p)
         self.__computed.append("residual_lifespan")
 
     def compute_survival(self):
-        data = self.survival_estimation.survival.T
+        data = pd.Series(self.survival_estimation.survival_interp)
+        data.name = "interp"
         data = self._shift_helper(data)
         self.survival_function = self._decompose_unique(data)[0].astype(
             self.__p)
+        self.survival_function[self.survival_function > 1] = np.nan
+        self.survival_function[self.survival_function < 0] = 0
         self.__computed.append("survival_function")
 
     def compute_residual_survival(self, t0) -> None:
@@ -281,17 +225,18 @@ class Lifespan:
         df_matrix["P"] = p = tp + fn
         df_matrix["N"] = n = tn + fp
         df_matrix["Total"] = p + n
-        if all(tp + fp > 0):
-            df_matrix["precision"] = precision = tp / (tp + fp)
-        if all(tp + fp > 0):
-            df_matrix["recall"] = recall = tp / (tp + fn)
         df_matrix["accuracy"] = (tp + tn) / (p + n)
 
-        if all(tp + fp > 0) and all(tp + fp > 0):
-            df_matrix["f1-score"] = 2 * recall * precision / (
+        if all(tp + fp > 0) and all(tp + fn > 0):
+            df_matrix["precision"] = precision = np.divide(tp, tp + fp)
+
+            df_matrix["recall"] = recall = np.divide(tp, tp + fn)
+
+            if all(recall > 0) and all(precision > 0):
+                df_matrix["f1-score"] = 2 * recall * precision / (
                         recall + precision)
-            df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
-                    2 ** 2 * precision + recall)
+                df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (
+                        2 ** 2 * precision + recall)
 
         return df_matrix
 
@@ -333,37 +278,82 @@ class Lifespan:
     def plot_sample(data, n_sample):
         plt.plot(data)
 
-    def plot_average_tagged(self, data: pd.DataFrame):
+    def plot_average_tagged(self, data: pd.DataFrame,
+                            event_type=None,
+                            plot_test_window=False, plot_type="dist"):
         corresp, event, duration, entry = self._decompose_unique(
             data,
             get_supervision=True)
-        pos_sample = corresp[event.astype(bool)].astype("float32")
-        neg_sample = corresp[~event.astype(bool)].astype("float32")
+        if event_type == "censored":
+            sample = corresp[~event.astype(bool)].astype("float32")
+            color = event_censored_color
+        elif event_type == "observed":
+            sample = corresp[event.astype(bool)].astype("float32")
+            color = event_observed_color
 
-        pos_sample_m = pos_sample.mean(skipna=True)
-        neg_sample_m = neg_sample.mean(skipna=True)
-        pos_sample_s = pos_sample.std(skipna=True)
-        neg_sample_s = neg_sample.std(skipna=True)
+        else:
+            sample = corresp.astype("float32")
+            color = event_censored_color
 
-        plt.fill_between(
-            neg_sample_m.index,
-            neg_sample_m - neg_sample_s,
-            neg_sample_m + neg_sample_s, color=event_censored_color, alpha=0.5)
-        plt.plot(neg_sample_m.index, neg_sample_m, color=event_censored_color,
-                 label="Censored event")
+        if plot_type == "dist":
+            percentiles = np.linspace(0, 1, 21)
+            sample_des = sample.describe(percentiles=percentiles)
 
-        plt.fill_between(
-            pos_sample_m.index,
-            pos_sample_m - pos_sample_s,
-            pos_sample_m + pos_sample_s, color=event_observed_color, alpha=0.5)
-        plt.plot(pos_sample_m.index, pos_sample_m, color=event_observed_color,
-                 label="Observed event")
+            def ts(__p):
+                return str(int(np.round(__p, 3) * 100)) + "%"
 
-        t0 = duration[event.astype(bool)].min()
-        t1 = duration[event.astype(bool)].max()
+            for p in percentiles:
+                label = None if p != percentiles[0] else f"{event_type} event"
+                plt.fill_between(
+                    sample_des.columns,
+                    sample_des.loc[ts(p)],
+                    sample_des.loc[ts(1 - p)], color=color,
+                    alpha=0.1, label=label)
+        else:
+            sample_des = sample.describe()
 
-        plt.axvline(t0, lw=1.5, ls="--", color="k")
-        plt.axvline(t1, lw=1.5, ls='--', color="k", label="Test window")
+            plt.plot(sample_des.columns, sample_des.loc["50%"],
+                     color=event_censored_color,
+                     label=f"{event_type} event")
+
+            plt.fill_between(
+                sample_des.columns,
+                sample_des.loc["25%"],
+                sample_des.loc["75%"], color=color, alpha=0.2)
+
+        if plot_test_window:
+            t0 = duration[event.astype(bool)].min()
+            t1 = duration[event.astype(bool)].max()
+
+            plt.axvline(t0, lw=1.5, ls="--", color="k")
+            plt.axvline(t1, lw=1.5, ls='--', color="k", label="Test window")
+        plt.legend()
+
+    def plot_dist_facet_grid(self, data, n=4):
+        bins = np.linspace(0, 1, 50)
+        data, event, duration, entry = self._decompose_unique(
+            data,
+            get_supervision=True)
+        s = data.shape[1]
+        dates = data.columns.to_numpy()[
+            np.array([(s*i)//n for i in range(1, n)])]
+
+        df = data[dates].unstack().reset_index()
+        data["event"] = event
+        df = pd.merge(df, data.reset_index()[["origin_index", "event"]],
+                      on="origin_index")
+        df = df.rename({"level_0": "dates", 0: "survival"}, axis=1)
+        df["dates"] = df["dates"].dt.year
+
+        g = sns.FacetGrid(df, row="dates", hue="event", aspect=5, height=2,
+                          palette="RdBu_r")
+        g.map(sns.histplot, "survival",
+              fill=False, alpha=1, linewidth=2,
+              bins=bins,
+              element="step",
+              # cumulative=True,
+              stat="density", common_norm=False
+              )
         plt.legend()
 
     def plot_tagged_sample(
@@ -493,6 +483,7 @@ class SurvivalEstimation:
                  survival_curves: pd.DataFrame,
                  unit='D', n_unit=1.,
                  process_input_data=True):
+
         self.survival = survival_curves.__deepcopy__()
         if process_input_data:
             data_temp = self.survival.T
@@ -500,6 +491,7 @@ class SurvivalEstimation:
             self.survival = data_temp.T
         self.times = self.survival.index.to_numpy()
         self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
+
         self.derivative = self.compute_derivative(self.survival, self.times,
                                                   self.unit)
         self.hazard = - self.derivative / self.survival
@@ -513,6 +505,28 @@ class SurvivalEstimation:
         self.residual_life[
             self.residual_life > 1e5] = self.residual_life.columns.max()
         self.residual_survival = None
+
+        # CREATE INTERPOLATION
+        self.hazard_interp = {
+            c: interp1d(self.hazard.index.astype(int),
+                        self.hazard[c], fill_value="extrapolate") for c in
+            self.hazard.columns
+        }
+        self.survival_interp = {
+            c: interp1d(self.survival.index.astype(int),
+                        self.survival[c], fill_value="extrapolate") for c in
+            self.survival.columns
+        }
+        self.cumulative_hazard_interp = {
+            c: interp1d(self.cumulative_hazard.index.astype(int),
+                        self.cumulative_hazard[c], fill_value="extrapolate") for
+            c in self.cumulative_hazard.columns
+        }
+        self.residual_life_interp = {
+            c: interp1d(self.residual_life.T.index.astype(int),
+                        self.residual_life.T[c], fill_value="extrapolate") for
+            c in self.residual_life.T.columns
+        }
 
     def plot_residual_life(self, sample=None, mean_behaviour=True):
         if not mean_behaviour:
@@ -548,6 +562,133 @@ class SurvivalEstimation:
             plt.legend()
             plt.ylabel("Expected residual lifespan")
             plt.xlabel("Time")
+
+
+class TemporalFunction:
+    def __init__(self, data: pd.DataFrame, name):
+        self.data = data
+        self.name = name
+
+    def interp(self):
+        self.data_interp = pd.Series(
+            {c: interp1d(self.data.index.astype(int),
+                         self.data[c], fill_value="extrapolate")
+             for
+             c in self.data.columns})
+        self.data_interp.name = "interp"
+
+
+def shift_origin(data: typing.Union[pd.DataFrame, Callable],
+                 starting_dates: pd.Series,
+                 period,
+                 date_final,
+                 date_initial,
+                 dtypes="float16"
+                 ):
+    """
+    Given a temporal dataframe, this function shift
+    the origin
+    """
+    range_ = np.arange(
+        starting_dates.min(),
+        date_final + period,
+        step=period)
+    data = data[data.columns.sort_values()]
+
+    idx_end, idx_sta = [np.searchsorted(range_, d)
+                        for d in (date_final, date_initial)]
+
+    df_data_date = pd.DataFrame(
+        index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
+    columns_save = df_data_date.columns
+
+    s = np.sort(starting_dates.dropna().unique()).astype(int)
+    s_dates = starting_dates.values.astype(int)
+    columns = df_data_date.columns.astype(int).to_numpy()
+    df_data_date.columns = columns
+    datetime = np.array([int(v.asm8) for v in data.columns.values])
+    values = data.values
+
+    ret = find_date(s, s_dates, columns, datetime, values)
+
+    for t0, (loc, select_col, v) in ret.items():
+        df_data_date.loc[
+            loc, select_col] = v
+    df_data_date.columns = columns_save
+    return df_data_date
+
+
+from multiprocessing import Pool
+
+
+def shift_from_interp(
+        data: pd.DataFrame,
+        starting_dates: pd.Series,
+        period,
+        date_final,
+        date_initial,
+        dtypes="float16"
+):
+    range_ = np.arange(
+        starting_dates.min(),
+        date_final + period,
+        step=period)
+
+    idx_end, idx_sta = [np.searchsorted(range_, d)
+                        for d in (date_final, date_initial)]
+    df_data_date = pd.DataFrame(
+        index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
+    dates = pd.to_datetime(df_data_date.columns.to_numpy())
+    try:
+        solve1 = PoolShift(dates, starting_dates, data)
+        with Pool(5) as p:
+            args = df_data_date.index.to_list()
+            results = p.map(solve1, args)
+        df_data_date.loc[:, :] = np.array(results)
+    except:
+        for index in df_data_date.index:
+            sd = starting_dates.loc[index]
+            f = data.loc[index, "interp"]
+            dates = pd.to_datetime(df_data_date.columns.to_numpy()) - sd
+            df_data_date.loc[index] = f(dates.astype(int))
+
+    return df_data_date
+
+
+class PoolShift:
+    def __init__(self, dates, starting_dates, data):
+        self.dates = dates
+        self.starting_dates = starting_dates.values
+        self.starting_dates_index = starting_dates.index.to_numpy()
+        self.data = data.values
+        self.data_index = data.index.to_numpy()
+
+    def __call__(self, index):
+        sd = self.starting_dates[index == self.starting_dates_index][0]
+        f = self.data[index == self.data_index, 0][0]
+        dates = self.dates - sd
+        return f(dates.astype(int))
+
+
+@njit
+def find_date(s: np.array, s_dates: np.array, columns: np.array,
+              datetime: np.array, values: np.array):
+    ret = {}
+    for d in s:
+        loc = s_dates == d
+        idx_start = np.argmin(np.abs((columns - d)))
+        t0 = (columns - d)[0]
+        select_column_input: np.array = datetime > t0
+        idx_stop = idx_start + sum(select_column_input) - 1
+        if idx_start == -1:
+            continue
+
+        select_col = columns[idx_start:idx_stop]
+        n_cols = len(select_col)
+        v = values[loc][:, select_column_input][:, :n_cols]
+
+        ret[t0] = loc, select_col, v
+    return ret
 
 
 def score(t_true: iter, t_pred: iter, observed: iter, score_function: callable):
