@@ -505,7 +505,6 @@ class SurvivalEstimation:
         self.residual_life[
             self.residual_life > 1e5] = self.residual_life.columns.max()
         self.residual_survival = None
-
         # CREATE INTERPOLATION
         self.hazard_interp = {
             c: interp1d(self.hazard.index.astype(int),
@@ -564,10 +563,9 @@ class SurvivalEstimation:
             plt.xlabel("Time")
 
 
-class TemporalFunction:
-    def __init__(self, data: pd.DataFrame, name):
-        self.data = data
-        self.name = name
+class SurvivalDistribution:
+    def __init__(self, survival: pd.DataFrame):
+        self.survival = survival
 
     def interp(self):
         self.data_interp = pd.Series(
