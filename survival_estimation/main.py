@@ -5,10 +5,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from numba import njit, jit
+from numba import njit
 from scipy.interpolate import interp1d
-from scipy.signal import savgol_filter
 from sklearn import metrics
+
+from survival_estimation.utils import process_survival_function, \
+    compute_derivative, residual_life, shift_from_interp
 
 # ======================================================================================================================
 # AESTHETICS
@@ -44,11 +46,8 @@ class Lifespan:
         self.age = age
         self.window = window
         self.__p = default_precision
-        if smoothed:
-            df_curves = SurvivalEstimation.smooth(self.df_curves.T,
-                                                  freq="20D").astype(self.__p)
-        else:
-            df_curves = self.df_curves.T
+
+        df_curves = self.df_curves.T
         self.survival_estimation = SurvivalEstimation(
             df_curves, unit='D',
             n_unit=365.25)
@@ -336,7 +335,7 @@ class Lifespan:
             get_supervision=True)
         s = data.shape[1]
         dates = data.columns.to_numpy()[
-            np.array([(s*i)//n for i in range(1, n)])]
+            np.array([(s * i) // n for i in range(1, n)])]
 
         df = data[dates].unstack().reset_index()
         data["event"] = event
@@ -434,74 +433,33 @@ def get(data: pd.DataFrame, date):
     return data.iloc[:, search]
 
 
-@jit(parallel=True)
-def cut(x):
-    y = x.copy()
-    for i in range(0, y.shape[1] - 1):
-        y[:, i] = np.nanmin(y[:, :i + 1], axis=1)
-    return y
-
-
 class SurvivalEstimation:
     """
     Instantiate class with data as survival curves. Columns must be timedelta objects
     """
-
-    @classmethod
-    def compute_derivative(cls, data: pd.DataFrame, times,
-                           unit) -> pd.DataFrame:
-        return data.diff().divide(
-            pd.Series(times, index=times).dt.total_seconds().diff() / unit,
-            axis=0
-        )
-
-    @classmethod
-    def smooth(cls, data: pd.DataFrame, freq) -> pd.DataFrame:
-        ret = data.resample(freq).interpolate(method='linear', order=3)
-        ret = pd.DataFrame(
-            savgol_filter(ret, window_length=20, polyorder=3, axis=0),
-            index=ret.index,
-            columns=ret.columns)
-        return ret
-
-    @classmethod
-    def process_survival(cls, data: pd.DataFrame):
-        data[data.columns[0]] = 1
-        data[data <= 0] = 0
-
-        # target non decreasing lines
-        condition = data.diff(axis=1) > 0
-        crit_lines = condition.sum(axis=1) > 0
-        data_correct = data.loc[crit_lines]
-
-        # apply correction
-        data_correct = cut(data_correct.astype("float32").values).astype(
-            "float16")
-        data.loc[crit_lines] = data_correct
 
     def __init__(self,
                  survival_curves: pd.DataFrame,
                  unit='D', n_unit=1.,
                  process_input_data=True):
 
-        self.survival = survival_curves.__deepcopy__()
+        survival_curves = survival_curves.__deepcopy__()
         if process_input_data:
-            data_temp = self.survival.T
-            self.process_survival(data_temp)
-            self.survival = data_temp.T
+            survival_curves = process_survival_function(survival_curves)
+        self.survival = survival_curves
+
         self.times = self.survival.index.to_numpy()
         self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
 
-        self.derivative = self.compute_derivative(self.survival, self.times,
-                                                  self.unit)
+        self.derivative = compute_derivative(self.survival, self.unit)
         self.hazard = - self.derivative / self.survival
         self.cumulative_hazard = - np.log(self.survival)
 
-        self.__survival = self.survival.T.__deepcopy__()
+        self.__survival = self.survival.__deepcopy__()
         self.__survival.columns = pd.to_timedelta(
             self.__survival.columns).total_seconds() / self.unit
         self.residual_life = residual_life(self.__survival)
-        self.residual_life.columns = self.survival.index
+        self.residual_life.columns = self.survival.columns
         self.residual_life[
             self.residual_life > 1e5] = self.residual_life.columns.max()
         self.residual_survival = None
@@ -547,7 +505,7 @@ class SurvivalEstimation:
             des = self.residual_life.astype("float32").describe(
                 [0.05, .25, .5, .75, 0.95])
             des.columns = pd.to_timedelta(
-                self.survival.index).total_seconds() / self.unit
+                self.survival.columns).total_seconds() / self.unit
 
             des = des.drop(["count", "mean", "std"])
             for i, d in enumerate(des.index):
@@ -563,109 +521,44 @@ class SurvivalEstimation:
             plt.xlabel("Time")
 
 
-class SurvivalDistribution:
-    def __init__(self, survival: pd.DataFrame):
-        self.survival = survival
-
-    def interp(self):
-        self.data_interp = pd.Series(
-            {c: interp1d(self.data.index.astype(int),
-                         self.data[c], fill_value="extrapolate")
-             for
-             c in self.data.columns})
-        self.data_interp.name = "interp"
-
-
-def shift_origin(data: typing.Union[pd.DataFrame, Callable],
-                 starting_dates: pd.Series,
-                 period,
-                 date_final,
-                 date_initial,
-                 dtypes="float16"
-                 ):
-    """
-    Given a temporal dataframe, this function shift
-    the origin
-    """
-    range_ = np.arange(
-        starting_dates.min(),
-        date_final + period,
-        step=period)
-    data = data[data.columns.sort_values()]
-
-    idx_end, idx_sta = [np.searchsorted(range_, d)
-                        for d in (date_final, date_initial)]
-
-    df_data_date = pd.DataFrame(
-        index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
-    columns_save = df_data_date.columns
-
-    s = np.sort(starting_dates.dropna().unique()).astype(int)
-    s_dates = starting_dates.values.astype(int)
-    columns = df_data_date.columns.astype(int).to_numpy()
-    df_data_date.columns = columns
-    datetime = np.array([int(v.asm8) for v in data.columns.values])
-    values = data.values
-
-    ret = find_date(s, s_dates, columns, datetime, values)
-
-    for t0, (loc, select_col, v) in ret.items():
-        df_data_date.loc[
-            loc, select_col] = v
-    df_data_date.columns = columns_save
-    return df_data_date
-
-
-from multiprocessing import Pool
-
-
-def shift_from_interp(
-        data: pd.DataFrame,
-        starting_dates: pd.Series,
-        period,
-        date_final,
-        date_initial,
-        dtypes="float16"
-):
-    range_ = np.arange(
-        starting_dates.min(),
-        date_final + period,
-        step=period)
-
-    idx_end, idx_sta = [np.searchsorted(range_, d)
-                        for d in (date_final, date_initial)]
-    df_data_date = pd.DataFrame(
-        index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
-    dates = pd.to_datetime(df_data_date.columns.to_numpy())
-    try:
-        solve1 = PoolShift(dates, starting_dates, data)
-        with Pool(5) as p:
-            args = df_data_date.index.to_list()
-            results = p.map(solve1, args)
-        df_data_date.loc[:, :] = np.array(results)
-    except:
-        for index in df_data_date.index:
-            sd = starting_dates.loc[index]
-            f = data.loc[index, "interp"]
-            dates = pd.to_datetime(df_data_date.columns.to_numpy()) - sd
-            df_data_date.loc[index] = f(dates.astype(int))
-
-    return df_data_date
-
-
-class PoolShift:
-    def __init__(self, dates, starting_dates, data):
-        self.dates = dates
-        self.starting_dates = starting_dates.values
-        self.starting_dates_index = starting_dates.index.to_numpy()
-        self.data = data.values
-        self.data_index = data.index.to_numpy()
-
-    def __call__(self, index):
-        sd = self.starting_dates[index == self.starting_dates_index][0]
-        f = self.data[index == self.data_index, 0][0]
-        dates = self.dates - sd
-        return f(dates.astype(int))
+# def shift_origin(data: typing.Union[pd.DataFrame, Callable],
+#                  starting_dates: pd.Series,
+#                  period,
+#                  date_final,
+#                  date_initial,
+#                  dtypes="float16"
+#                  ):
+#     """
+#     Given a temporal dataframe, this function shift
+#     the origin
+#     """
+#     range_ = np.arange(
+#         starting_dates.min(),
+#         date_final + period,
+#         step=period)
+#     data = data[data.columns.sort_values()]
+#
+#     idx_end, idx_sta = [np.searchsorted(range_, d)
+#                         for d in (date_final, date_initial)]
+#
+#     df_data_date = pd.DataFrame(
+#         index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
+#     columns_save = df_data_date.columns
+#
+#     s = np.sort(starting_dates.dropna().unique()).astype(int)
+#     s_dates = starting_dates.values.astype(int)
+#     columns = df_data_date.columns.astype(int).to_numpy()
+#     df_data_date.columns = columns
+#     datetime = np.array([int(v.asm8) for v in data.columns.values])
+#     values = data.values
+#
+#     ret = find_date(s, s_dates, columns, datetime, values)
+#
+#     for t0, (loc, select_col, v) in ret.items():
+#         df_data_date.loc[
+#             loc, select_col] = v
+#     df_data_date.columns = columns_save
+#     return df_data_date
 
 
 @njit
@@ -676,7 +569,7 @@ def find_date(s: np.array, s_dates: np.array, columns: np.array,
         loc = s_dates == d
         idx_start = np.argmin(np.abs((columns - d)))
         t0 = (columns - d)[0]
-        select_column_input: np.array = datetime > t0
+        select_column_input = np.array(datetime > t0)
         idx_stop = idx_start + sum(select_column_input) - 1
         if idx_start == -1:
             continue
@@ -692,7 +585,8 @@ def find_date(s: np.array, s_dates: np.array, columns: np.array,
 def score(t_true: iter, t_pred: iter, observed: iter, score_function: callable):
     times = np.sort(np.unique(t_true))
     assert t_true.__len__() == t_pred.__len__(), TypeError(
-        "The number of observation in prediction and ground truth does not correspond")
+        "The number of observation in prediction "
+        "and ground truth does not correspond")
     ret = pd.Series(index=times)
     for t in times:
         y_true = (t_true > t) & observed
@@ -721,13 +615,6 @@ class Search:
             return self(support[m:])
         else:
             return max(self(fun, support[m:]), self(support[:m]))
-
-
-def test_is_survival_curves(data: pd.DataFrame):
-    assertion_1 = (data.diff(axis=1) > 0).sum().sum() == 0
-    assertion_2 = np.sum((data > 1) | (data < 0)).sum() == 0
-    assert assertion_1, "Survival function should be decreasing"
-    assert assertion_2, "Survival function should be in [0, 1]"
 
 
 def find_threshold(y_true: np.ndarray, y_pred: np.ndarray,
@@ -764,32 +651,3 @@ def find_threshold(y_true: np.ndarray, y_pred: np.ndarray,
 
 def date_to_year(date):
     return date.value / 1e9 / 60 / 60 / 24 / 365.25 + 1970
-
-
-def residual_life(survival_estimate: pd.DataFrame,
-                  precision="float32") -> pd.DataFrame:
-    """
-    Compute mean residual lifespan according to
-    doi:10.1016/j.jspi.2004.06.012
-    :param survival_estimate: Matrix of the estimate of the survival function
-    :return:
-    """
-    deltas = np.diff(survival_estimate.columns.values)
-
-    # days = deltas.astype('timedelta64[D]').astype(int) / 365.25
-    dt = np.ones((len(survival_estimate), 1), dtype=precision) * deltas.reshape(
-        1, -1)
-
-    surv_int = survival_estimate.__deepcopy__()
-
-    s_left = survival_estimate.iloc[:, 1:].values
-    s_right = survival_estimate.iloc[:, :-1].values
-
-    surv_int.iloc[:, :-1] = (s_left + s_right) / 2
-    surv_int.iloc[:, :-1] *= dt
-
-    surv_int = surv_int[np.sort(surv_int.columns)[::-1]].cumsum(axis=1)
-    ret = (surv_int / survival_estimate).astype(precision)
-    ret[survival_estimate == 0] = 0
-    del surv_int, dt, deltas
-    return ret - survival_estimate.columns[0]
