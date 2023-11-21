@@ -14,8 +14,6 @@ numba = "*"
 scipy = "*"
 scikit-learn = "*"
 pandas = "^1"
-survival-trees={git="https://gitlab.eurobios.com/vlaurent/survival-trees", branch="master"}
-
 
 [build-system]
 requires = ["poetry-core"]
