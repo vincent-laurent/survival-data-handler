@@ -50,4 +50,3 @@ def test_survival_estimation(data):
 
 def test_lifespan():
     rossi = load_rossi()
-    

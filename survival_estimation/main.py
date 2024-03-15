@@ -520,47 +520,6 @@ class SurvivalEstimation:
             plt.ylabel("Expected residual lifespan")
             plt.xlabel("Time")
 
-
-# def shift_origin(data: typing.Union[pd.DataFrame, Callable],
-#                  starting_dates: pd.Series,
-#                  period,
-#                  date_final,
-#                  date_initial,
-#                  dtypes="float16"
-#                  ):
-#     """
-#     Given a temporal dataframe, this function shift
-#     the origin
-#     """
-#     range_ = np.arange(
-#         starting_dates.min(),
-#         date_final + period,
-#         step=period)
-#     data = data[data.columns.sort_values()]
-#
-#     idx_end, idx_sta = [np.searchsorted(range_, d)
-#                         for d in (date_final, date_initial)]
-#
-#     df_data_date = pd.DataFrame(
-#         index=data.index, columns=range_[idx_sta:idx_end], dtype=dtypes)
-#     columns_save = df_data_date.columns
-#
-#     s = np.sort(starting_dates.dropna().unique()).astype(int)
-#     s_dates = starting_dates.values.astype(int)
-#     columns = df_data_date.columns.astype(int).to_numpy()
-#     df_data_date.columns = columns
-#     datetime = np.array([int(v.asm8) for v in data.columns.values])
-#     values = data.values
-#
-#     ret = find_date(s, s_dates, columns, datetime, values)
-#
-#     for t0, (loc, select_col, v) in ret.items():
-#         df_data_date.loc[
-#             loc, select_col] = v
-#     df_data_date.columns = columns_save
-#     return df_data_date
-
-
 @njit
 def find_date(s: np.array, s_dates: np.array, columns: np.array,
               datetime: np.array, values: np.array):
