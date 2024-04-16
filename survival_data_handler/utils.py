@@ -100,21 +100,20 @@ def residual_life(survival_estimate: pd.DataFrame,
     deltas = np.diff(survival_estimate.columns.values)
 
     # days = deltas.astype('timedelta64[D]').astype(int) / 365.25
-    dt = np.ones((len(survival_estimate), 1), dtype=precision) * deltas.reshape(
+    dt = 1.*np.ones((len(survival_estimate), 1), dtype=precision) * deltas.reshape(
         1, -1)
 
-    surv_int = survival_estimate.__deepcopy__()
+    surv_int = survival_estimate.__deepcopy__().astype(float)
 
-    s_left = survival_estimate.iloc[:, 1:].values
-    s_right = survival_estimate.iloc[:, :-1].values
+    s_left = survival_estimate.iloc[:, 1:].values.astype(float)
+    s_right = survival_estimate.iloc[:, :-1].values.astype(float)
 
-    surv_int.iloc[:, :-1] = (s_left + s_right) / 2
+    surv_int.iloc[:, :-1] = (s_left + s_right) / 2.
     surv_int.iloc[:, :-1] *= dt
 
     surv_int = surv_int[np.sort(surv_int.columns)[::-1]].cumsum(axis=1)
     ret = (surv_int / survival_estimate).astype(precision)
     ret[survival_estimate == 0] = 0
-    del surv_int, dt, deltas
     return ret - survival_estimate.columns[0]
 
 

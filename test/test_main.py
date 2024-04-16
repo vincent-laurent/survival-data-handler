@@ -15,7 +15,7 @@ import pytest
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from survival_data_handler.main import SurvivalEstimation
+from survival_data_handler.main import SurvivalEstimation, Lifespan
 from survival_data_handler.utils import smooth, process_survival_function, \
     compute_derivative
 
@@ -60,5 +60,25 @@ def test_survival_estimation(data):
     se.plot_residual_life()
 
 
-def test_lifespan():
-    rossi = load_rossi()
+def test_lifespan(data):
+
+    rossi, curves = data
+
+    age = pd.to_timedelta(rossi["age"]*365.25, unit="D")
+    birth = pd.to_datetime('2000')
+    rossi["index"] = rossi.index
+    lifespan = Lifespan(
+        curves,
+        index=rossi["index"],
+        birth=birth,
+        age=age,
+        window=(pd.to_datetime("2000"), pd.to_datetime("2100"))
+    )
+
+    # test plot function
+    lifespan.plot_curves_residual_life()
+    lifespan.plot_curves()
+    lifespan.add_supervision(event=rossi["arrest"],
+                             durations=pd.to_timedelta(rossi["week"]*7, unit="D"))
+
+    lifespan.plot_tagged_sample()

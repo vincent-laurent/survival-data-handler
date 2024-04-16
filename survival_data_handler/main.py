@@ -10,18 +10,17 @@
 # limitations under the License.
 
 import typing
-from typing import Callable, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from numba import njit
 from scipy.interpolate import interp1d
 from sklearn import metrics
 
 from survival_data_handler.utils import process_survival_function, \
     compute_derivative, residual_life, shift_from_interp
+from survival_data_handler import plotting
 
 # ======================================================================================================================
 # AESTHETICS
@@ -31,6 +30,7 @@ event_observed_color = cmap(0.95)
 
 
 class Lifespan:
+    __index = "origin_index"
 
     # ==============================================
     #           CLASS METHOD
@@ -45,21 +45,22 @@ class Lifespan:
                  risks: tuple = (0.96, 0.98),
                  default_precision="float"):
 
-        self.df_curves = ageing_curves
+        self.__curves = ageing_curves.__deepcopy__()
         self.df_idx = pd.DataFrame(
             dict(age=age,
                  birth=birth,
                  index=index))
-        self._index = "origin_index"
-        self.df_idx.index.name = self._index
+
+        self.df_idx.index.name = self.__index
         self.index = index
         self.age = age
         self.window = window
         self.__p = default_precision
 
-        df_curves = self.df_curves.T
+        self.__check_args()
+
         self.survival_estimation = SurvivalEstimation(
-            df_curves, unit='D',
+            self.curves, unit='D',
             n_unit=365.25)
 
         self._df_idx_unique = self.df_idx.drop_duplicates(
@@ -78,6 +79,11 @@ class Lifespan:
         self.confusion_matrix_threshold = np.nan
         self.__computed = []
         self.__supervised = False
+
+    def __check_args(self):
+
+        if hasattr(self.curves.columns, "dt"):
+            ValueError("curves index must have dt property")
 
     @property
     def computed_historical_data(self):
@@ -110,7 +116,7 @@ class Lifespan:
         data = pd.merge(self._df_idx_unique["index"].reset_index(), data,
                         right_index=True,
                         left_on='index')
-        data = data.set_index(self._index).drop("index", axis=1)
+        data = data.set_index(self.__index).drop("index", axis=1)
         ret = shift_from_interp(
             data=data,
             starting_dates=self.starting_dates,
@@ -254,7 +260,7 @@ class Lifespan:
     # ==============================================
     def plot_curves(self):
         plt.figure(dpi=200, figsize=(7, 5))
-        self.df_curves.T.plot(legend=False)
+        self.curves.plot(legend=False)
 
     def plot_curves_residual_life(self, **kwargs):
         self.survival_estimation.plot_residual_life(**kwargs)
@@ -369,7 +375,7 @@ class Lifespan:
             self, data: pd.DataFrame, n_sample=None,
             n_sample_pos=None, n_sample_neg=None,
     ):
-        from survival_trees import plotting
+
         assert self.__supervised, "No supervision provided"
         corresp, event, duration, entry = self._decompose_unique(data,
                                                                  get_supervision=True)
@@ -397,7 +403,6 @@ class Lifespan:
 
     def plotly_auc_vs_score(self, temporal_scores: pd.DataFrame,
                             temporal_metric: pd.Series, **kwargs):
-        from survival_trees import plotting
         corresp, event, duration, entry = self._decompose_unique(
             temporal_scores, get_supervision=True)
         time_start, time_stop = duration.min(), duration.max()
@@ -413,7 +418,6 @@ class Lifespan:
     @staticmethod
     def plotly_roc_curve(roc: dict, colormap="magma_r", template="plotly_white",
                          **kwargs):
-        from survival_trees import plotting
         return plotting.plot_roc_curve_plotly(roc, colormap=colormap,
                                               template=template, **kwargs)
 
@@ -422,20 +426,27 @@ class Lifespan:
     # ==============================================
     def assess_metric(self, data, method="roc-cd",
                       metric=metrics.roc_auc_score):
-        from survival_trees import metric as m
+
         corresp, event, duration, _ = self._decompose_unique(data,
                                                              get_supervision=True)
 
         time_start, time_stop = duration.min(), duration.max()
         corresp = corresp[
             [c for c in corresp.columns if time_start <= c <= time_stop]]
-        return m.time_dependent_helper(
+        return metric.time_dependent_helper(
             corresp,
             event_observed=event,
             censoring_time=duration,
             method=method,
             function=metric
         )
+
+    # ==============================================
+    #           Properties
+    # ==============================================
+    @property
+    def curves(self) -> pd.DataFrame:
+        return self.__curves
 
 
 def get(data: pd.DataFrame, date):
@@ -530,89 +541,5 @@ class SurvivalEstimation:
             plt.ylabel("Expected residual lifespan")
             plt.xlabel("Time")
 
-
-@njit
-def find_date(s: np.array, s_dates: np.array, columns: np.array,
-              datetime: np.array, values: np.array):
-    ret = {}
-    for d in s:
-        loc = s_dates == d
-        idx_start = np.argmin(np.abs((columns - d)))
-        t0 = (columns - d)[0]
-        select_column_input = np.array(datetime > t0)
-        idx_stop = idx_start + sum(select_column_input) - 1
-        if idx_start == -1:
-            continue
-
-        select_col = columns[idx_start:idx_stop]
-        n_cols = len(select_col)
-        v = values[loc][:, select_column_input][:, :n_cols]
-
-        ret[t0] = loc, select_col, v
-    return ret
-
-
-def score(t_true: iter, t_pred: iter, observed: iter, score_function: callable):
-    times = np.sort(np.unique(t_true))
-    assert t_true.__len__() == t_pred.__len__(), TypeError(
-        "The number of observation in prediction "
-        "and ground truth does not correspond")
-    ret = pd.Series(index=times)
-    for t in times:
-        y_true = (t_true > t) & observed
-        y_pred = t_pred.loc[t]
-        ret.loc[t] = score_function(y_true, y_pred)
-    return ret
-
-
-class Search:
-
-    def __init__(self, fun):
-        self.fun = fun
-
-    @njit
-    def __call__(self, support):
-        fun = self.fun
-        if len(support) == 1:
-            return support[0]
-        m = len(support) // 2
-        left = fun(support[0])
-        right = fun(support[-1])
-        middle = fun(support[m])
-        if left >= middle >= right:
-            return self(support[:m])
-        elif left <= middle <= right:
-            return self(support[m:])
-        else:
-            return max(self(fun, support[m:]), self(support[:m]))
-
-
-def find_threshold(y_true: np.ndarray, y_pred: np.ndarray,
-                   target_metric: Union[Callable, str],
-                   score: bool):
-    """
-    Given true and predicted values, compute decision rule's threshold which
-    optimizes the target metric
-    """
-    n = 100000
-    if isinstance(target_metric, str):
-        target_metric = getattr(metrics, target_metric)
-    threshold = np.sort(np.unique(y_pred))
-
-    if len(y_pred) > n:
-        choice = np.random.choice(range(0, len(y_pred)), size=n)
-    else:
-        choice = range(len(y_pred))
-
-    sign = 1 if score else -1
-
-    def compute_metric(th):
-        return sign * target_metric(
-            np.array(y_true)[choice],
-            np.array(y_pred)[choice] > th)
-
-    return Search(compute_metric)(threshold)
-
-
-def date_to_year(date):
-    return date.value / 1e9 / 60 / 60 / 24 / 365.25 + 1970
+class Curves:
+    pass

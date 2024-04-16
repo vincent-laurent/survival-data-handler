@@ -3,5 +3,5 @@ seaborn
 numba
 scipy
 scikit-learn
-pandas
+pandas>2
 lifelines
