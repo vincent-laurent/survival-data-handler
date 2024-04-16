@@ -14,7 +14,7 @@ from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
-from numba import jit
+import numba
 from scipy.signal import savgol_filter
 
 
@@ -60,7 +60,6 @@ def compute_derivative(data: pd.DataFrame,
     ).T
 
 
-@jit(parallel=True)
 def _cut(x):
     y = x.copy()
     for i in range(0, y.shape[1] - 1):
