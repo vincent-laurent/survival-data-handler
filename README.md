@@ -1,4 +1,6 @@
 # Survival data handler
+![code coverage](https://raw.githubusercontent.com/eurobios-mews-labs/survival-data-handler/coverage-badge/coverage.svg?raw=true)
+[![PyPI version](https://badge.fury.io/py/palma.svg)](https://badge.fury.io/py/palma)
 
 ```python
 import pandas as pd
