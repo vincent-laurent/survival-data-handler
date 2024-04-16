@@ -1,27 +1,12 @@
-[tool.poetry]
+[project]
 name = "survival_data_handler"
 version = "2024.1.1"
 description = ""
-authors = ["vlaurent"]
+authors = [{ name = 'Vincent Laurent', email = 'vlaurent@eurobios.com' }]
 readme = "README.md"
-packages = [{include = "survival_data_handler"}]
 
-[tool.poetry.dependencies]
-python = "^3"
-matplotlib = "^3"
-seaborn = "*"
-numba = "*"
-scipy = "*"
-scikit-learn = "*"
-pandas = "^1"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
 
-
-[[tool.poetry.source]]
-name = "gitlab"
-url = "https://github.com/eurobios-mews-labs/survival-data-handler/"
-default = false
-secondary = true
