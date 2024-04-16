@@ -22,6 +22,6 @@ build-backend = "poetry.core.masonry.api"
 
 [[tool.poetry.source]]
 name = "gitlab"
-url = "https://gitlab.eurobios.com"
+url = "https://github.com/eurobios-mews-labs/survival-data-handler/"
 default = false
 secondary = true
