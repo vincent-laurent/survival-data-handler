@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "survival-estimation"
+name = "survival_data_handler"
 version = "2024.1.1"
 description = ""
 authors = ["vlaurent"]
