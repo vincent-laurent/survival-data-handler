@@ -1,0 +1,7 @@
+matplotlib>=3
+seaborn
+numba
+scipy
+scikit-learn
+pandas
+lifelines

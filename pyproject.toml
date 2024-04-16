@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "survival-estimation"
+version = "2024.1.1"
+description = ""
+authors = ["vlaurent"]
+readme = "README.md"
+packages = [{include = "survival_data_handler"}]
+
+[tool.poetry.dependencies]
+python = "^3"
+matplotlib = "^3"
+seaborn = "*"
+numba = "*"
+scipy = "*"
+scikit-learn = "*"
+pandas = "^1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[[tool.poetry.source]]
+name = "gitlab"
+url = "https://gitlab.eurobios.com"
+default = false
+secondary = true
