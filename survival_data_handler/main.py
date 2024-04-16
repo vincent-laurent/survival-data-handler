@@ -9,7 +9,7 @@ from numba import njit
 from scipy.interpolate import interp1d
 from sklearn import metrics
 
-from survival_estimation.utils import process_survival_function, \
+from survival_data_handler.utils import process_survival_function, \
     compute_derivative, residual_life, shift_from_interp
 
 # ======================================================================================================================
@@ -32,7 +32,6 @@ class Lifespan:
                  birth: iter,
                  window: tuple,
                  risks: tuple = (0.96, 0.98),
-                 smoothed: bool = False,
                  default_precision="float"):
 
         self.df_curves = ageing_curves
@@ -520,6 +519,7 @@ class SurvivalEstimation:
             plt.ylabel("Expected residual lifespan")
             plt.xlabel("Time")
 
+
 @njit
 def find_date(s: np.array, s_dates: np.array, columns: np.array,
               datetime: np.array, values: np.array):
@@ -582,11 +582,6 @@ def find_threshold(y_true: np.ndarray, y_pred: np.ndarray,
     """
     Given true and predicted values, compute decision rule's threshold which
     optimizes the target metric
-    :param y_true:
-    :param y_pred:
-    :param target_metric:
-    :param score:
-    :return:
     """
     n = 100000
     if isinstance(target_metric, str):

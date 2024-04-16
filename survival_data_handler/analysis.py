@@ -6,7 +6,7 @@ import pandas as pd
 import seaborn as sns
 from sklearn import metrics
 
-from survival_estimation import Lifespan, test_is_survival_curves, \
+from survival_data_handler import Lifespan, test_is_survival_curves, \
     event_censored_color
 
 

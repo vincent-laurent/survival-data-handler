@@ -3,8 +3,8 @@ import pytest
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from survival_estimation.main import SurvivalEstimation
-from survival_estimation.utils import smooth, process_survival_function, \
+from survival_data_handler.main import SurvivalEstimation
+from survival_data_handler.utils import smooth, process_survival_function, \
     compute_derivative
 
 

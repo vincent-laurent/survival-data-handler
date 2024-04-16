@@ -4,5 +4,5 @@ Simple tools to manipulate survival data
 ## Installation
 
 ```shell
-pip install git+https://gitlab.eurobios.com/escb/survival-estimation.git
+pip install survival_data_handler
 ```

@@ -1,10 +1,10 @@
 [tool.poetry]
 name = "survival-estimation"
-version = "0.0.0"
+version = "2024.1.1"
 description = ""
-authors = ["vlaurent <vlaurent@eurobios.com>"]
+authors = ["vlaurent"]
 readme = "README.md"
-packages = [{include = "survival_estimation"}]
+packages = [{include = "survival_data_handler"}]
 
 [tool.poetry.dependencies]
 python = "^3"
@@ -18,3 +18,10 @@ pandas = "^1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+
+[[tool.poetry.source]]
+name = "gitlab"
+url = "https://gitlab.eurobios.com"
+default = false
+secondary = true
