@@ -58,6 +58,15 @@ def test_survival_estimation(data):
         curves.drop_duplicates(), unit='D',
         n_unit=365.25)
     se.plot_residual_life()
+    # se.plot_residual_life(mean_behaviour=False)
+
+
+def test_survival_estimation_attributes(data):
+    rossi, curves = data
+
+    rossi["index"] = rossi.index
+    se = SurvivalEstimation(survival_curves=curves)
+    assert hasattr(se, "hazard_interp")
 
 
 def test_lifespan(data):
@@ -81,11 +90,7 @@ def test_lifespan(data):
                              durations=pd.to_timedelta(rossi["week"] * 7, unit="D"))
 
     lifespan.compute_survival()
+    lifespan.compute_expected_residual_life()
+    lifespan.compute_percentile_life()
 
 
-def test_survival_estimation(data):
-    rossi, curves = data
-
-    rossi["index"] = rossi.index
-    se = SurvivalEstimation(survival_curves=curves)
-    assert hasattr(se, "hazard_interp")
