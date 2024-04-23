@@ -22,6 +22,17 @@ from survival_data_handler.utils import process_survival_function, \
     compute_derivative, residual_life, shift_from_interp
 from survival_data_handler import plotting
 
+
+class TimeCurve:
+    def __init__(self, df, name):
+        self.__data = df
+        self.__name = name
+
+    @property
+    def data(self) -> pd.DataFrame:
+        return self.__data
+
+
 # ======================================================================================================================
 # AESTHETICS
 cmap = sns.color_palette('rainbow', as_cmap=True)
@@ -129,6 +140,11 @@ class Lifespan:
     # ==============================================
     #           ENRICH REPRESENTATION
     # ==============================================
+    @property
+    def survival_function(self) -> pd.DataFrame:
+        if "survival_function" not in self.__computed:
+            self.compute_survival()
+        return self.__survival_function
 
     def compute_expected_residual_life(self) -> None:
         data = pd.Series(self.survival_estimation.residual_life_interp)
@@ -142,10 +158,10 @@ class Lifespan:
         data = pd.Series(self.survival_estimation.survival_interp)
         data.name = "interp"
         data = self._shift_helper(data)
-        self.survival_function = self._decompose_unique(data)[0].astype(
+        self.__survival_function = self._decompose_unique(data)[0].astype(
             self.__p)
-        self.survival_function[self.survival_function > 1] = np.nan
-        self.survival_function[self.survival_function < 0] = 0
+        self.__survival_function[self.__survival_function > 1] = np.nan
+        self.__survival_function[self.__survival_function < 0] = 0
         self.__computed.append("survival_function")
 
     def compute_residual_survival(self, t0) -> None:
@@ -467,9 +483,11 @@ class SurvivalEstimation:
         survival_curves = survival_curves.__deepcopy__()
         if process_input_data:
             survival_curves = process_survival_function(survival_curves)
-        self.survival = survival_curves
 
-        self.times = self.survival.index.to_numpy()
+        self.survival = survival_curves
+        self.__check_args()
+
+        self.times = self.survival.columns.to_numpy()
         self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
 
         self.derivative = compute_derivative(self.survival, self.unit)
@@ -486,24 +504,24 @@ class SurvivalEstimation:
         self.residual_survival = None
         # CREATE INTERPOLATION
         self.hazard_interp = {
-            c: interp1d(self.hazard.index.astype(int),
-                        self.hazard[c], fill_value="extrapolate") for c in
-            self.hazard.columns
+            c: interp1d(self.hazard.columns.astype(int),
+                        self.hazard.loc[c], fill_value="extrapolate") for c in
+            self.hazard.index
         }
         self.survival_interp = {
-            c: interp1d(self.survival.index.astype(int),
-                        self.survival[c], fill_value="extrapolate") for c in
-            self.survival.columns
+            c: interp1d(self.survival.columns.astype(int),
+                        self.survival.loc[c], fill_value="extrapolate") for c in
+            self.survival.index
         }
         self.cumulative_hazard_interp = {
-            c: interp1d(self.cumulative_hazard.index.astype(int),
-                        self.cumulative_hazard[c], fill_value="extrapolate") for
-            c in self.cumulative_hazard.columns
+            c: interp1d(self.cumulative_hazard.columns.astype(int),
+                        self.cumulative_hazard.loc[c], fill_value="extrapolate") for
+            c in self.cumulative_hazard.index
         }
         self.residual_life_interp = {
-            c: interp1d(self.residual_life.T.index.astype(int),
-                        self.residual_life.T[c], fill_value="extrapolate") for
-            c in self.residual_life.T.columns
+            c: interp1d(self.residual_life.columns.astype(int),
+                        self.residual_life.loc[c], fill_value="extrapolate") for
+            c in self.residual_life.index
         }
 
     def plot_residual_life(self, sample=None, mean_behaviour=True):
@@ -541,5 +559,6 @@ class SurvivalEstimation:
             plt.ylabel("Expected residual lifespan")
             plt.xlabel("Time")
 
-class Curves:
-    pass
+    def __check_args(self):
+        if hasattr(self.survival.columns, "dt"):
+            ValueError("curves index must have dt property")

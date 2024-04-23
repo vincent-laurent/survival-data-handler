@@ -61,10 +61,9 @@ def test_survival_estimation(data):
 
 
 def test_lifespan(data):
-
     rossi, curves = data
 
-    age = pd.to_timedelta(rossi["age"]*365.25, unit="D")
+    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
     birth = pd.to_datetime('2000')
     rossi["index"] = rossi.index
     lifespan = Lifespan(
@@ -79,6 +78,14 @@ def test_lifespan(data):
     lifespan.plot_curves_residual_life()
     lifespan.plot_curves()
     lifespan.add_supervision(event=rossi["arrest"],
-                             durations=pd.to_timedelta(rossi["week"]*7, unit="D"))
+                             durations=pd.to_timedelta(rossi["week"] * 7, unit="D"))
 
-    lifespan.plot_tagged_sample()
+    lifespan.compute_survival()
+
+
+def test_survival_estimation(data):
+    rossi, curves = data
+
+    rossi["index"] = rossi.index
+    se = SurvivalEstimation(survival_curves=curves)
+    assert hasattr(se, "hazard_interp")
