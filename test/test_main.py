@@ -114,4 +114,3 @@ def test_supervision(data):
     lifespan.plot_tagged_sample(lifespan.survival_function, )
     lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2)
     test_is_survival_curves(lifespan.survival_function)
-    
