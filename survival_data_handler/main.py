@@ -23,14 +23,10 @@ from survival_data_handler.utils import process_survival_function, \
 from survival_data_handler import plotting
 
 
-class TimeCurve:
-    def __init__(self, df, name):
-        self.__data = df
-        self.__name = name
+class TimeCurve(pd.DataFrame):
+    def __init__(self, *args):
+        super().__init__(*args)
 
-    @property
-    def data(self) -> pd.DataFrame:
-        return self.__data
 
 
 # ======================================================================================================================

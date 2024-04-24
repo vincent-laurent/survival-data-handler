@@ -17,7 +17,7 @@ from lifelines.datasets import load_rossi
 
 from survival_data_handler.main import SurvivalEstimation, Lifespan
 from survival_data_handler.utils import smooth, process_survival_function, \
-    compute_derivative, test_is_survival_curves
+    compute_derivative
 
 
 @pytest.fixture()
@@ -98,6 +98,7 @@ def test_lifespan(data):
 
 
 def test_supervision(data):
+    from survival_data_handler import test_is_survival_curves
     rossi, curves = data
     rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
     age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
