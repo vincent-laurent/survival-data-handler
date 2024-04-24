@@ -24,10 +24,50 @@ from survival_data_handler import plotting
 
 
 class TimeCurve(pd.DataFrame):
-    def __init__(self, *args):
+    def __init__(self, *args, unit='D', n_unit=1., ):
         super().__init__(*args)
+        self.n_unit = n_unit
+        self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
+        self.__checks()
 
+    def __checks(self):
+        if not all(self.columns[i] <= self.columns[i + 1] for i in range(len(self.columns) - 1)):
+            raise ValueError("Columns must be sorted")
+        # if not isinstance(self.columns[0], pd.Timedelta):
+        #     raise ValueError("Columns must symbolize time index")
 
+    def __interpolator(self):
+        self.__interpolation = {
+            c: interp1d(self.columns.astype(int),
+                        self.loc[c], fill_value="extrapolate") for
+            c in self.index}
+
+    @property
+    def interpolation(self) -> dict:
+        if not hasattr(self, "__interpolation"):
+            self.__interpolator()
+        return self.__interpolation
+
+    def derivative(self):
+        return TimeCurve(compute_derivative(self, self.unit))
+
+    def log(self):
+        return TimeCurve(np.log(self))
+
+    def exp(self):
+        return TimeCurve(np.exp(self))
+
+    def __div__(self, other):
+        return TimeCurve(self / other, self.unit, self.n_unit)
+
+    def __add__(self, other):
+        return TimeCurve(self + other, self.unit, self.n_unit)
+
+    def __sub__(self, other):
+        return TimeCurve(self - other, self.unit, self.n_unit)
+
+    def __neg__(self):
+        return TimeCurve(- self, self.unit, self.n_unit)
 
 # ======================================================================================================================
 # AESTHETICS
@@ -450,45 +490,32 @@ class SurvivalEstimation:
         if process_input_data:
             survival_curves = process_survival_function(survival_curves)
 
-        self.survival = survival_curves
+        self.survival = TimeCurve(survival_curves, unit='D', n_unit=1.)
+
+        self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
         self.__check_args()
 
         self.times = self.survival.columns.to_numpy()
-        self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
 
-        self.derivative = compute_derivative(self.survival, self.unit)
-        self.hazard = - self.derivative / self.survival
-        self.cumulative_hazard = - np.log(self.survival)
+        self.derivative = self.survival.derivative()
+
+        self.hazard: TimeCurve = - self.derivative / self.survival
+        self.cumulative_hazard: TimeCurve = - self.survival.log()
 
         self.__survival = self.survival.__deepcopy__()
         self.__survival.columns = pd.to_timedelta(
             self.__survival.columns).total_seconds() / self.unit
-        self.residual_life = residual_life(self.__survival)
+
+        self.residual_life = TimeCurve(residual_life(self.__survival), unit='D', n_unit=1.)
         self.residual_life.columns = self.survival.columns
         self.residual_life[
             self.residual_life > 1e5] = self.residual_life.columns.max()
+
         self.residual_survival = None
-        # CREATE INTERPOLATION
-        self.hazard_interp = {
-            c: interp1d(self.hazard.columns.astype(int),
-                        self.hazard.loc[c], fill_value="extrapolate") for c in
-            self.hazard.index
-        }
-        self.survival_interp = {
-            c: interp1d(self.survival.columns.astype(int),
-                        self.survival.loc[c], fill_value="extrapolate") for c in
-            self.survival.index
-        }
-        self.cumulative_hazard_interp = {
-            c: interp1d(self.cumulative_hazard.columns.astype(int),
-                        self.cumulative_hazard.loc[c], fill_value="extrapolate") for
-            c in self.cumulative_hazard.index
-        }
-        self.residual_life_interp = {
-            c: interp1d(self.residual_life.columns.astype(int),
-                        self.residual_life.loc[c], fill_value="extrapolate") for
-            c in self.residual_life.index
-        }
+        # CREATE INTERPOLATION TODO : remove
+        self.hazard_interp = self.hazard.interpolation
+        self.cumulative_hazard_interp = self.cumulative_hazard.interpolation
+        self.residual_life_interp = self.residual_life.interpolation
 
     def plot_residual_life(self, sample=None, mean_behaviour=True):
         if not mean_behaviour:

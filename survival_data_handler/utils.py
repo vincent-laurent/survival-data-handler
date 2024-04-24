@@ -53,10 +53,12 @@ def process_survival_function(data: pd.DataFrame) -> pd.DataFrame:
 def compute_derivative(data: pd.DataFrame,
                        unit) -> pd.DataFrame:
     times = data.columns.to_numpy()
-    return data.T.diff().divide(
+    diff = data.T.diff()
+    return diff.divide(
         pd.Series(times, index=times).dt.total_seconds().diff() / unit,
         axis=0
     ).T
+
 
 
 def _cut(x):

@@ -15,7 +15,7 @@ import pytest
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from survival_data_handler.main import SurvivalEstimation, Lifespan
+from survival_data_handler.main import SurvivalEstimation, Lifespan, TimeCurve
 from survival_data_handler.utils import smooth, process_survival_function, \
     compute_derivative
 
@@ -115,3 +115,15 @@ def test_supervision(data):
     lifespan.plot_tagged_sample(lifespan.survival_function, )
     lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2)
     test_is_survival_curves(lifespan.survival_function)
+
+
+def test_curve_object(data):
+    rossi, curves = data
+    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
+    birth = pd.to_datetime('2000')
+    tc = TimeCurve(curves)
+    tc_deriv = tc.derivative()
+    tc_deriv.interpolation
+    (-tc_deriv)
+
+    pass
