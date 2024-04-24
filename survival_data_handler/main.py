@@ -53,7 +53,6 @@ class Lifespan:
                  age: iter,
                  birth: iter,
                  window: tuple,
-                 risks: tuple = (0.96, 0.98),
                  default_precision="float"):
 
         self.__curves = ageing_curves.__deepcopy__()
@@ -77,8 +76,6 @@ class Lifespan:
         self._df_idx_unique = self.df_idx.drop_duplicates(
             subset=["index", "birth"])
         self.starting_dates = self._df_idx_unique["birth"]
-
-        self.risk_level = risks
         c = ["birth", "index"]
 
         self._corresp = pd.merge(
@@ -138,23 +135,32 @@ class Lifespan:
         return ret
 
     # ==============================================
-    #           ENRICH REPRESENTATION
+    #           PROPERTIES
     # ==============================================
     @property
     def survival_function(self) -> pd.DataFrame:
         if "survival_function" not in self.__computed:
-            self.compute_survival()
+            self.__compute_survival()
         return self.__survival_function
 
-    def compute_expected_residual_life(self) -> None:
+    @property
+    def residual_expected_life(self) -> pd.DataFrame:
+        if "residual_expected_life" not in self.__computed:
+            self.__compute_expected_residual_life()
+        return self.__residual_expected_life
+
+    # ==============================================
+    #           ENRICH REPRESENTATION
+    # ==============================================
+    def __compute_expected_residual_life(self) -> None:
         data = pd.Series(self.survival_estimation.residual_life_interp)
         data.name = "interp"
         data = self._shift_helper(data)
-        self.residual_lifespan = self._decompose_unique(data)[0].astype(
+        self.__residual_expected_life = self._decompose_unique(data)[0].astype(
             self.__p)
         self.__computed.append("residual_lifespan")
 
-    def compute_survival(self):
+    def __compute_survival(self):
         data = pd.Series(self.survival_estimation.survival_interp)
         data.name = "interp"
         data = self._shift_helper(data)
@@ -164,36 +170,26 @@ class Lifespan:
         self.__survival_function[self.__survival_function < 0] = 0
         self.__computed.append("survival_function")
 
-    def compute_residual_survival(self, t0) -> None:
-        assert "survival_function" in self.computed_historical_data
+    def residual_survival(self, t0) -> pd.DataFrame:
 
         t0 = max(t0, self.survival_function.columns[0])
         s0 = get(self.survival_function, t0).astype("float16").values
-        self.residual_survival = self.survival_function.divide(s0,
-                                                               axis=0).copy()
-        self.residual_survival = self.residual_survival[
-            [c for c in self.residual_survival.columns if c > t0]]
-        self.__computed.append("residual_survival")
+        df = self.survival_function.divide(
+            s0, axis=0).copy()
+        df = df[[c for c in df.columns if c > t0]]
+        return df
 
-    def compute_times(self, on="residual_survival"):
-        assert on in self.computed_historical_data
-        low, upp = self.risk_level
-        cond_low = (self.__getattribute__(on) > low).sum(axis=1)
-        cond_upp = (self.__getattribute__(on) > upp).sum(axis=1)
+    def compute_times(self, p=0.95, on="survival_function"):
+
+        cond_low = (self.__getattribute__(on) > p).sum(axis=1)
         dates = self.__getattribute__(on).columns.to_numpy()
-
         df_time = self._df_idx_unique.__deepcopy__()
-
-        df_time.loc[cond_upp.index, "surveillance_time"] = dates[
-            np.where(cond_upp.values >= len(dates), len(dates) - 1,
-                     cond_upp.values)]
-
-        df_time.loc[cond_low.index, "critical_time"] = dates[
+        df_time.loc[cond_low.index, "time"] = dates[
             np.where(cond_low.values >= len(dates), len(dates) - 1,
                      cond_low.values)]
         # remove past positive sample
-        self.df_time, _, _, _ = self._decompose_unique(df_time)
-        return self.df_time
+        df_time, _, _, _ = self._decompose_unique(df_time)
+        return df_time["time"]
 
     def remove_the_dead(self, data: pd.DataFrame, error="coerce"):
         try:
@@ -210,19 +206,19 @@ class Lifespan:
 
         return data
 
-    def compute_percentile_life(self, q: float = 0.5) -> pd.DataFrame:
+    def percentile_life(self, q: float = 0.5) -> pd.DataFrame:
         """
         Compute the percentile lifetime corresponding to the proportion of
         the population (in terms of curves) that remains
         """
         min_ = pd.DataFrame(self.survival_function > q)
         cs = min_.cumsum(axis=1)
-        self.percentile_life = pd.DataFrame(
+        df = pd.DataFrame(
             np.array(cs.columns.to_list())[cs.iloc[:, -1].values - 1],
             columns=["percentile_life_%s" % q]
         )
         del min_, cs
-        return self.percentile_life
+        return df
 
     def compute_confusion_matrix(self, on: str, threshold: float, score=True):
         from sklearn import metrics
@@ -282,32 +278,6 @@ class Lifespan:
         self.survival_estimation.plot_residual_life(**kwargs)
         plt.ylabel("Expected residual lifespan")
         plt.xlabel("Time [Y]")
-
-    def plot_cumulated_times(self):
-        times = self.df_time
-        df_plot = times[["temps_surveillance",
-                         "temps_critique"]].unstack().reset_index().sort_values(
-            'level_0')
-        df_plot.columns = ["type", "0", "temps"]
-
-        fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
-        histplot = sns.histplot(df_plot, x="temps", hue="type", element="step",
-                                fill=False, cumulative=True, bins=50,
-                                ax=ax)
-        ax.set_xlabel("Date [Y]")
-        ax.set_ylabel("Length of rail [Km]")
-
-        plt.tight_layout()
-        ylb = [
-            format(int(int(elt.get_text()) * 108 / 1000), ",").replace(",", " ")
-            for elt in
-            histplot.get_yticklabels()]
-        ax.set_yticklabels(ylb)
-        plt.grid()
-
-    @staticmethod
-    def plot_sample(data, n_sample):
-        plt.plot(data)
 
     def plot_average_tagged(self, data: pd.DataFrame,
                             event_type=None,

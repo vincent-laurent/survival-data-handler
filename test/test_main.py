@@ -17,7 +17,7 @@ from lifelines.datasets import load_rossi
 
 from survival_data_handler.main import SurvivalEstimation, Lifespan
 from survival_data_handler.utils import smooth, process_survival_function, \
-    compute_derivative
+    compute_derivative, test_is_survival_curves
 
 
 @pytest.fixture()
@@ -89,8 +89,29 @@ def test_lifespan(data):
     lifespan.add_supervision(event=rossi["arrest"],
                              durations=pd.to_timedelta(rossi["week"] * 7, unit="D"))
 
-    lifespan.compute_survival()
-    lifespan.compute_expected_residual_life()
-    lifespan.compute_percentile_life()
+    assert isinstance(lifespan.survival_function, pd.DataFrame)
+    assert isinstance(lifespan.residual_survival(pd.to_datetime("2022")), pd.DataFrame)
+    assert isinstance(lifespan.percentile_life(0.1), pd.DataFrame)
+    assert isinstance(lifespan.residual_expected_life, pd.DataFrame)
+    t = lifespan.compute_times(p=0.5)
+    rossi["times"] = t
 
 
+def test_supervision(data):
+    rossi, curves = data
+    rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
+    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
+    birth = pd.to_datetime('2000')
+    rossi["index"] = rossi.index
+    lifespan = Lifespan(
+        curves,
+        index=rossi["index"],
+        birth=birth,
+        age=age,
+        window=(pd.to_datetime("2000"), pd.to_datetime("2001"))
+    )
+    lifespan.add_supervision(durations=rossi["duration"] + birth, event=rossi["arrest"])
+    lifespan.plot_tagged_sample(lifespan.survival_function, )
+    lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2)
+    test_is_survival_curves(lifespan.survival_function)
+    
