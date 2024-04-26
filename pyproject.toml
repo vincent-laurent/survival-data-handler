@@ -1,6 +1,6 @@
 [project]
 name = "survival_data_handler"
-version = "2024.1.3"
+version = "2024.1.4"
 description = ""
 authors = [{ name = 'Vincent Laurent', email = 'vlaurent@eurobios.com' }]
 readme = "README.md"
