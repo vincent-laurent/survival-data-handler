@@ -5,3 +5,4 @@ scipy
 scikit-learn
 pandas>2
 lifelines
+numpy

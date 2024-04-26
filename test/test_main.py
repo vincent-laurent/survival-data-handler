@@ -15,9 +15,10 @@ import pytest
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from survival_data_handler.main import SurvivalEstimation, Lifespan, TimeCurve
+from survival_data_handler.main import SurvivalEstimation, Lifespan, TimeCurveData
 from survival_data_handler.utils import smooth, process_survival_function, \
     compute_derivative
+from survival_data_handler.base import TimeCurveInterpolation
 
 
 @pytest.fixture()
@@ -55,10 +56,11 @@ def test_utils_compute_derivative(data):
 def test_survival_estimation(data):
     _, curves = data
     se = SurvivalEstimation(
-        curves.drop_duplicates(), unit='D',
+        curves.drop_duplicates(),
+        unit='D',
         n_unit=365.25)
     se.plot_residual_life()
-    # se.plot_residual_life(mean_behaviour=False)
+    se.plot_residual_life(mean_behaviour=False)
 
 
 def test_survival_estimation_attributes(data):
@@ -66,7 +68,9 @@ def test_survival_estimation_attributes(data):
 
     rossi["index"] = rossi.index
     se = SurvivalEstimation(survival_curves=curves)
-    assert hasattr(se, "hazard_interp")
+    assert isinstance(se.hazard_function, TimeCurveData)
+    assert isinstance(se.survival_function, TimeCurveData)
+    assert isinstance(se.cumulative_hazard_function, TimeCurveData)
 
 
 def test_lifespan(data):
@@ -112,18 +116,43 @@ def test_supervision(data):
         window=(pd.to_datetime("2000"), pd.to_datetime("2001"))
     )
     lifespan.add_supervision(durations=rossi["duration"] + birth, event=rossi["arrest"])
-    lifespan.plot_tagged_sample(lifespan.survival_function, )
+
     lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2)
-    test_is_survival_curves(lifespan.survival_function)
+    lifespan.plot_average_tagged(on="survival_function")
+    lifespan.plot_average_tagged(on="survival_function", plot_test_window=True, plot_type=None)
+    lifespan.plot_dist_facet_grid(on="survival_function")
+    lifespan.plot_tagged_sample(on="survival_function", n_sample=10)
+    lifespan.plot_tagged_sample(on="survival_function", n_sample_pos=10)
+    lifespan.plot_tagged_sample(on="survival_function")
+    test_is_survival_curves(lifespan.survival_function.round(3))
 
 
 def test_curve_object(data):
     rossi, curves = data
-    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
-    birth = pd.to_datetime('2000')
-    tc = TimeCurve(curves)
-    tc_deriv = tc.derivative()
-    tc_deriv.interpolation
-    (-tc_deriv)
+    tc = TimeCurveData(curves)
+    tc_prime = tc.derivative()
+    assert isinstance(tc_prime, TimeCurveData)
+    assert isinstance((-tc_prime), TimeCurveData)
+    assert isinstance((tc_prime / tc), TimeCurveData)
+    assert isinstance((tc_prime.exp() / tc), TimeCurveData)
+    assert isinstance((tc_prime.log() - tc), TimeCurveData)
+    assert isinstance((tc_prime.exp() + tc), TimeCurveData)
 
-    pass
+
+def test_interpolation_curves(data):
+    rossi, curves = data
+    rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
+    rossi["birth"] = pd.to_datetime('2000')
+    rossi["index"] = rossi.index
+
+    tc = TimeCurveData(curves)
+    tc_prime = tc.interpolation
+
+    ti = TimeCurveInterpolation(
+        tc_prime,
+        index=rossi["index"],
+        birth=rossi["birth"],
+        period=pd.to_timedelta(30, "D"),
+        window=(pd.to_datetime("2000"), pd.to_datetime("2001")))
+    assert isinstance(ti.unique_curve, TimeCurveData)
+    assert isinstance(ti.curve, TimeCurveData)

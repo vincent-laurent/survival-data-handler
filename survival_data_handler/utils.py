@@ -108,14 +108,23 @@ def residual_life(survival_estimate: pd.DataFrame,
 
     s_left = survival_estimate.iloc[:, 1:].values.astype(float)
     s_right = survival_estimate.iloc[:, :-1].values.astype(float)
+    t0 = survival_estimate.columns[0]
+    if "time" in str(dt.dtype):
+        dt = dt / np.timedelta64(1, 's')
+        t0 /= np.timedelta64(1, 's')
 
     surv_int.iloc[:, :-1] = (s_left + s_right) / 2.
     surv_int.iloc[:, :-1] *= dt
+    surv_int = surv_int.drop(surv_int.columns[-1], axis=1)
 
-    surv_int = surv_int[np.sort(surv_int.columns)[::-1]].cumsum(axis=1)
+    surv_int = pd.DataFrame(
+        np.cumsum(surv_int[np.sort(surv_int.columns)[::-1]], axis=1),
+        index=surv_int.index,
+        columns=surv_int.columns)
+
     ret = (surv_int / survival_estimate).astype(precision)
     ret[survival_estimate == 0] = 0
-    return ret - survival_estimate.columns[0]
+    return ret - t0
 
 
 class _PoolShift:

@@ -20,7 +20,3 @@ exclude_also =
     @(abc\.)?abstractmethod
 
 
-ignore_errors = True
-
-[html]
-directory = coverage_html_report
