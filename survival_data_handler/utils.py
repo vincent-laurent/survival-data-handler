@@ -139,7 +139,6 @@ def manage_delta(deltas: np.ndarray, columns, n, precision):
     return dt, t0
 
 
-
 class _PoolShift:
     def __init__(self, dates, starting_dates, data):
         self.dates = dates

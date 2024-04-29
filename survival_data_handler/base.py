@@ -105,7 +105,8 @@ class TimeCurveData(pd.DataFrame, TimeCurve):
             self.__interpolator()
         return self.__interpolation
 
-    def __other(self, other):
+    @staticmethod
+    def __other(other):
         if hasattr(other, "values"):
             return other.values
         else:
@@ -121,9 +122,16 @@ class TimeCurveInterpolation(TimeCurve):
             window: tuple,
             period):
         self.__interpolation = interpolation
-        self.__birth = birth
-        self.__index = index
-        self.__index.name = 'origin_index'
+
+        self.__matching = pd.DataFrame()
+        self.__matching["index"] = index
+        self.__matching["birth"] = birth
+        self.__matching.index = index.index
+        self.__matching.index.name = 'origin_index'
+
+        self.__reduced_matching = self.__matching.drop_duplicates(
+            subset=["birth", "index"]
+        )
         self.__period = period
         self.__window = window
 
@@ -132,10 +140,17 @@ class TimeCurveInterpolation(TimeCurve):
         return pd.Series(self.__interpolation, name="interpolation")
 
     def __shift(self) -> TimeCurveData:
-        data = pd.merge(self.__index.reset_index(), self.interpolation, right_index=True, left_on='index')
+
+        data = pd.merge(
+            self.__reduced_matching["index"].reset_index(),
+            self.interpolation,
+            right_index=True,
+            left_on='index')
+
         data = data.set_index("origin_index").drop("index", axis=1)
         ret = shift_from_interp(
-            data=data, starting_dates=self.__birth,
+            data=data,
+            starting_dates=self.__reduced_matching["birth"],
             period=self.__period,
             date_initial=self.__window[0],
             date_final=self.__window[1],
@@ -152,9 +167,11 @@ class TimeCurveInterpolation(TimeCurve):
     @property
     def curve(self) -> TimeCurveData:
         ret = pd.merge(
-            self.__index.reset_index(), self.unique_curve,
+            self.__reduced_matching, self.unique_curve,
             right_index=True,
-            left_index=True).drop(
-            columns=["index"]).set_index("origin_index")
-
+            left_index=True)
+        m = self.__matching
+        ret = pd.merge(m, ret, on=["birth", "index"], how="left")
+        ret.index = m.index
+        ret = ret[self.unique_curve.columns]
         return TimeCurveData(ret)

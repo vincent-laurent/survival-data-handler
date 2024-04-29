@@ -45,37 +45,6 @@ def tagged_curves(temporal_curves: pd.DataFrame, label: pd.DataFrame,
     plot.plot(temp_curves.loc[neg_index].T, c=event_censored_color, **plot_args)
 
 
-def _prepare_data(duration,
-                  event,
-                  entry,
-                  temporal_score: pd.DataFrame
-                  ):
-    label = event
-    time_event = duration
-    temp_curves = temporal_score.astype("float32")
-    temp_curves.index = range(len(temp_curves))
-    dates = temp_curves.columns.to_list()
-    pos_index = temp_curves.index[label.astype(bool)]
-    # check consistency
-    if time_event is not None:
-        col_id = np.searchsorted(temp_curves.columns, time_event) - 1
-
-        outdated = pd.DataFrame(np.nan, index=temp_curves.index,
-                                columns=temp_curves.columns)
-        for c in np.unique(col_id):
-            ind = col_id == c
-            data = temp_curves[ind]
-            outdated.loc[ind, dates[c:]] = data[dates[c:]]
-            temp_curves.loc[ind, dates[c + 1:]] = np.nan
-        temp_curves["observed"] = True
-        outdated["observed"] = False
-        data = pd.concat((temp_curves, outdated), axis=0)
-
-        data["observed event"] = False
-        data.loc[pos_index, "observed event"] = True
-        return data
-
-
 def auc_vs_score_plotly(
         temporal_scores: pd.DataFrame,
         event_observed: pd.Series,

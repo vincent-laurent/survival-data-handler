@@ -9,8 +9,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import typing
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -19,7 +17,7 @@ from sklearn import metrics
 
 from survival_data_handler import plotting
 from survival_data_handler.base import TimeCurveData, SurvivalCurves, TimeCurveInterpolation
-from survival_data_handler.utils import process_survival_function, shift_from_interp
+from survival_data_handler.utils import process_survival_function
 
 # ======================================================================================================================
 # AESTHETICS
@@ -42,24 +40,31 @@ class Lifespan(SurvivalCurves):
         self.age = age
         self.window = window
         self.__p = default_precision
+        self.__survival_estimation = SurvivalEstimation(self.curves, unit='D', n_unit=365.25)
+
+        self.__tci = TimeCurveInterpolation(
+            self.__survival_estimation.survival_function.interpolation,
+            birth,
+            index,
+            window,
+            pd.to_timedelta(30, "D")
+        )
 
         self.__check_args()
 
-        self.__survival_estimation = SurvivalEstimation(self.curves, unit='D', n_unit=365.25)
+        # self._df_idx_unique = self.df_idx.drop_duplicates(subset=["index", "birth"])
+        # self.starting_dates = self._df_idx_unique["birth"]
+        # c = ["birth", "index"]
 
-        self._df_idx_unique = self.df_idx.drop_duplicates(subset=["index", "birth"])
-        self.starting_dates = self._df_idx_unique["birth"]
-        c = ["birth", "index"]
-
-        self._corresp = pd.merge(self._df_idx_unique[c].reset_index(), self.df_idx[c].reset_index(),
-                                 on=["birth", "index"], suffixes=("_u", ""))
-
-        self._corresp = self._corresp.drop(columns=c)
+        # self._corresp = pd.merge(self._df_idx_unique[c].reset_index(), self.df_idx[c].reset_index(),
+        #                          on=["birth", "index"], suffixes=("_u", ""))
+        #
+        # self._corresp = self._corresp.drop(columns=c)
         self.confusion_matrix_threshold = np.nan
         self.__computed = []
         self.__supervised = False
         self.__interpolator = {}
-        super().__init__(self.survival_function)
+        super().__init__(self.__tci.curve)
 
     def __check_args(self):
 
@@ -89,46 +94,24 @@ class Lifespan(SurvivalCurves):
             entry = self.entry if self.entry is None else self.entry.loc[index]
             return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
 
-    def _decompose_unique(self, data, get_supervision=False):
-        ret = pd.merge(self._corresp, data, right_index=True, left_on='origin_index_u').drop(
-            columns=["origin_index_u"]).set_index("origin_index")
-
-        if not get_supervision:
-            return ret, None, None, None
-        else:
-            index = [i for i in ret.index if i in self.event.index]
-            entry = self.entry if self.entry is None else self.entry.loc[index]
-            return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
-
-    # ==============================================
-    #           PROPERTIES
-    # ==============================================
-    @property
-    def survival_function(self) -> pd.DataFrame:
-        if "survival_function" not in self.__interpolator.keys():
-            self.__interpolator["survival_function"] = self.__compute_curve("survival_function")
-        return self.__interpolator["survival_function"].curve
+    # def _decompose_unique(self, data, get_supervision=False):
+    #     ret = pd.merge(self._corresp, data, right_index=True, left_on='origin_index_u').drop(
+    #         columns=["origin_index_u"]).set_index("origin_index")
+    #
+    #     if not get_supervision:
+    #         return ret, None, None, None
+    #     else:
+    #         index = [i for i in ret.index if i in self.event.index]
+    #         entry = self.entry if self.entry is None else self.entry.loc[index]
+    #         return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
 
     @property
     def residual_expected_life(self) -> pd.DataFrame:
-        if "residual_life" not in self.__interpolator.keys():
-            self.__interpolator["residual_life"] = self.__compute_curve("residual_life")
-        return self.__interpolator["residual_life"].curve
+        return self.residual_life
 
     # ==============================================
     #           ENRICH REPRESENTATION
     # ==============================================
-
-    def __compute_curve(self, attribute):
-        self.index.index.name = None
-        tci = TimeCurveInterpolation(
-            self.__survival_estimation.__getattribute__(attribute).interpolation,
-            self._df_idx_unique["birth"],
-            self.index,
-            self.window,
-            pd.to_timedelta(30, "D")
-        )
-        return tci
 
     def residual_survival(self, t0) -> pd.DataFrame:
 
@@ -139,15 +122,9 @@ class Lifespan(SurvivalCurves):
         return df
 
     def compute_times(self, p=0.95, on="survival_function"):
-
         cond_low = (self.__getattribute__(on) > p).sum(axis=1)
         dates = self.__getattribute__(on).columns.to_numpy()
-        df_time = self._df_idx_unique.__deepcopy__()
-        df_time.loc[cond_low.index, "time"] = dates[
-            np.where(cond_low.values >= len(dates), len(dates) - 1, cond_low.values)]
-        # remove past positive sample
-        df_time, _, _, _ = self._decompose_unique(df_time)
-        return df_time["time"]
+        return pd.Series(dates[cond_low])
 
     def remove_the_dead(self, data: pd.DataFrame, error="coerce"):
         try:
@@ -220,7 +197,7 @@ class Lifespan(SurvivalCurves):
         plt.ylabel("Expected residual lifespan")
         plt.xlabel("Time [Y]")
 
-    def plot_average_tagged(self, on:str, event_type=None, plot_test_window=False, plot_type="dist"):
+    def plot_average_tagged(self, on: str, event_type=None, plot_test_window=False, plot_type="dist"):
         corresp, event, duration, entry = self.__get_align_data(on, get_supervision=True)
         if event_type == "censored":
             sample = corresp[~event.astype(bool)].astype("float32")
@@ -259,7 +236,7 @@ class Lifespan(SurvivalCurves):
             plt.axvline(t1, lw=1.5, ls='--', color="k", label="Test window")
         plt.legend()
 
-    def plot_dist_facet_grid(self, on:str, n=4):
+    def plot_dist_facet_grid(self, on: str, n=4):
         bins = np.linspace(0, 1, 50)
         data, event, duration, entry = self.__get_align_data(on, get_supervision=True)
         s = data.shape[1]
@@ -276,7 +253,7 @@ class Lifespan(SurvivalCurves):
               stat="density", common_norm=False)
         plt.legend()
 
-    def plot_tagged_sample(self, on:str, n_sample=None, n_sample_pos=None, n_sample_neg=None, ):
+    def plot_tagged_sample(self, on: str, n_sample=None, n_sample_pos=None, n_sample_neg=None, ):
 
         assert self.__supervised, "No supervision provided"
         data, event, duration, entry = self.__get_align_data(on, get_supervision=True)

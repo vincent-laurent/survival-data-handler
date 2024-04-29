@@ -11,6 +11,7 @@
 
 
 import pandas as pd
+import numpy as np
 import pytest
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
@@ -78,7 +79,11 @@ def test_lifespan(data):
 
     age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
     birth = pd.to_datetime('2000')
-    rossi["index"] = rossi.index
+    curves = curves.iloc[:2]
+    curves.index = ["a", "b"]
+
+    rossi["index"] = np.random.choice(curves.index, replace=True, size=len(rossi))
+
     lifespan = Lifespan(
         curves,
         index=rossi["index"],
@@ -149,15 +154,43 @@ def test_interpolation_curves(data):
     rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
     rossi["birth"] = pd.to_datetime('2000')
     rossi["index"] = rossi.index
+    curves = curves.iloc[:2]
+    curves.index = ["a", "b"]
 
+    rossi["index"] = np.random.choice(curves.index, replace=True, size=len(rossi))
     tc = TimeCurveData(curves)
     tc_prime = tc.interpolation
 
     ti = TimeCurveInterpolation(
-        tc_prime,
+        interpolation=tc_prime,
         index=rossi["index"],
         birth=rossi["birth"],
         period=pd.to_timedelta(30, "D"),
         window=(pd.to_datetime("2000"), pd.to_datetime("2001")))
+
     assert isinstance(ti.unique_curve, TimeCurveData)
     assert isinstance(ti.curve, TimeCurveData)
+    assert len(ti.unique_curve) == 2
+    assert len(ti.curve) == len(rossi)
+
+    rossi, curves = data
+    rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
+    rossi["birth"] = pd.to_datetime('2000')
+    rossi["index"] = rossi.index
+
+    rossi["index"] = np.random.choice(curves.index, replace=True, size=len(rossi))
+    tc = TimeCurveData(curves)
+    tc_prime = tc.interpolation
+
+    ti = TimeCurveInterpolation(
+        interpolation=tc_prime,
+        index=rossi["index"],
+        birth=rossi["birth"],
+        period=pd.to_timedelta(30, "D"),
+        window=(pd.to_datetime("2000"), pd.to_datetime("2001")))
+
+    assert isinstance(ti.unique_curve, TimeCurveData)
+    assert isinstance(ti.curve, TimeCurveData)
+    assert len(ti.unique_curve) <= len(rossi)
+    assert len(ti.curve) == len(rossi)
+
