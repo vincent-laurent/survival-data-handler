@@ -55,10 +55,9 @@ def compute_derivative(data: pd.DataFrame,
     times = data.columns.to_numpy()
     diff = data.T.diff()
     return diff.divide(
-        pd.Series(times, index=times).dt.total_seconds().diff() / unit,
+        pd.Series(times, index=times).diff().dt.total_seconds() / unit,
         axis=0
     ).T
-
 
 
 def _cut(x):
@@ -98,33 +97,47 @@ def residual_life(survival_estimate: pd.DataFrame,
        References:
        - doi:10.1016/j.jspi.2004.06.012
     """
-    deltas = np.diff(survival_estimate.columns.values)
+    deltas = - survival_estimate.columns.diff(-1)
+    columns = survival_estimate.columns
+    n = len(survival_estimate)
 
-    # days = deltas.astype('timedelta64[D]').astype(int) / 365.25
-    dt = 1.*np.ones((len(survival_estimate), 1), dtype=precision) * deltas.reshape(
-        1, -1)
+    dt, t0 = manage_delta(deltas, columns, n, precision)
 
-    surv_int = survival_estimate.__deepcopy__().astype(float)
+    survival_int = survival_estimate.__deepcopy__().astype(float)
+    survival_estimate[survival_estimate < 0] = 0
+    survival_estimate[survival_estimate > 1] = 1
 
     s_left = survival_estimate.iloc[:, 1:].values.astype(float)
     s_right = survival_estimate.iloc[:, :-1].values.astype(float)
-    t0 = survival_estimate.columns[0]
-    if "time" in str(dt.dtype):
-        dt = dt / np.timedelta64(1, 's')
-        t0 /= np.timedelta64(1, 's')
 
-    surv_int.iloc[:, :-1] = (s_left + s_right) / 2.
-    surv_int.iloc[:, :-1] *= dt
-    surv_int = surv_int.drop(surv_int.columns[-1], axis=1)
+    survival_int.iloc[:, :-1] = (s_left + s_right) / 2.
+    survival_int.iloc[:, :-1] *= dt[:, :-1]
+    survival_int = survival_int.drop(survival_int.columns[-1], axis=1)
 
-    surv_int = pd.DataFrame(
-        np.cumsum(surv_int[np.sort(surv_int.columns)[::-1]], axis=1),
-        index=surv_int.index,
-        columns=surv_int.columns)
+    survival_int = pd.DataFrame(
+        np.cumsum(survival_int[np.sort(survival_int.columns)[::-1]], axis=1),
+        index=survival_int.index,
+        columns=survival_int.columns)
 
-    ret = (surv_int / survival_estimate).astype(precision)
+    ret = (survival_int / survival_estimate).astype(precision)
     ret[survival_estimate == 0] = 0
-    return ret - t0
+    ret = ret - t0
+    for c in ret.columns:
+        ret[c] = pd.to_timedelta(ret[c], unit="s")
+    return ret
+
+
+def manage_delta(deltas: np.ndarray, columns, n, precision):
+    if "timedelta" in str(deltas.dtype):
+        deltas_ = pd.to_timedelta(deltas).total_seconds().values
+        dt = 1. * np.ones((n, 1),
+                          dtype=precision) * deltas_.reshape(1, -1)
+        try:
+            t0 = columns[0].total_seconds()
+        except AttributeError:
+            t0 = pd.to_datetime(columns).astype(int)[0] * 1e-9
+    return dt, t0
+
 
 
 class _PoolShift:

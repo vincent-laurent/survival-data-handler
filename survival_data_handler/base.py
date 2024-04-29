@@ -28,8 +28,12 @@ class SurvivalCurves:
         return self.__curve
 
     @property
+    def density_function(self):
+        return - self.survival_function.derivative()
+
+    @property
     def hazard_function(self):
-        return self.survival_function.derivative()
+        return self.density_function / self.survival_function
 
     @property
     def cumulative_hazard_function(self):
@@ -40,6 +44,10 @@ class SurvivalCurves:
         ret = residual_life(self.survival_function)
         ret.columns = self.survival_function.columns
         return TimeCurveData(ret)
+
+    @property
+    def lifetime_distribution_function(self):
+        return 1 - self.survival_function
 
 
 class TimeCurve:
@@ -76,15 +84,15 @@ class TimeCurveData(pd.DataFrame, TimeCurve):
         return TimeCurveData(np.exp(self))
 
     def __truediv__(self, other):
-        return TimeCurveData(pd.DataFrame(self.values / other.values, columns=self.columns, index=self.index),
+        return TimeCurveData(pd.DataFrame(self.values / self.__other(other), columns=self.columns, index=self.index),
                              unit=self.unit, n_unit=self.n_unit)
 
     def __add__(self, other):
-        return TimeCurveData(pd.DataFrame(self.values + other.values, columns=self.columns, index=self.index),
+        return TimeCurveData(pd.DataFrame(self.values + self.__other(other), columns=self.columns, index=self.index),
                              unit=self.unit, n_unit=self.n_unit)
 
     def __sub__(self, other):
-        return TimeCurveData(pd.DataFrame(self.values - other.values, columns=self.columns, index=self.index),
+        return TimeCurveData(pd.DataFrame(self.values - self.__other(other), columns=self.columns, index=self.index),
                              unit=self.unit, n_unit=self.n_unit)
 
     def __neg__(self):
@@ -96,6 +104,12 @@ class TimeCurveData(pd.DataFrame, TimeCurve):
         if not hasattr(self, "__interpolation"):
             self.__interpolator()
         return self.__interpolation
+
+    def __other(self, other):
+        if hasattr(other, "values"):
+            return other.values
+        else:
+            return other
 
 
 class TimeCurveInterpolation(TimeCurve):

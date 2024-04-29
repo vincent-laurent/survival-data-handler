@@ -89,7 +89,6 @@ def test_lifespan(data):
 
     # test plot function
     lifespan.plot_curves_residual_life()
-    lifespan.plot_curves()
     lifespan.add_supervision(event=rossi["arrest"],
                              durations=pd.to_timedelta(rossi["week"] * 7, unit="D"))
 
@@ -97,6 +96,12 @@ def test_lifespan(data):
     assert isinstance(lifespan.residual_survival(pd.to_datetime("2022")), pd.DataFrame)
     assert isinstance(lifespan.percentile_life(0.1), pd.DataFrame)
     assert isinstance(lifespan.residual_expected_life, pd.DataFrame)
+    assert isinstance(lifespan.density_function, pd.DataFrame)
+    assert isinstance(lifespan.cumulative_hazard_function, pd.DataFrame)
+    assert isinstance(lifespan.hazard_function, pd.DataFrame)
+    assert isinstance(lifespan.lifetime_distribution_function, pd.DataFrame)
+    assert isinstance(lifespan.residual_life, pd.DataFrame)
+
     t = lifespan.compute_times(p=0.5)
     rossi["times"] = t
 

@@ -28,7 +28,7 @@ event_censored_color = cmap(0.1)
 event_observed_color = cmap(0.95)
 
 
-class Lifespan:
+class Lifespan(SurvivalCurves):
     __index = "origin_index"
 
     def __init__(self, ageing_curves: pd.DataFrame, index: iter, age: iter, birth: iter, window: tuple,
@@ -59,6 +59,7 @@ class Lifespan:
         self.__computed = []
         self.__supervised = False
         self.__interpolator = {}
+        super().__init__(self.survival_function)
 
     def __check_args(self):
 
@@ -87,6 +88,7 @@ class Lifespan:
             index = [i for i in ret.index if i in self.event.index]
             entry = self.entry if self.entry is None else self.entry.loc[index]
             return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
+
     def _decompose_unique(self, data, get_supervision=False):
         ret = pd.merge(self._corresp, data, right_index=True, left_on='origin_index_u').drop(
             columns=["origin_index_u"]).set_index("origin_index")
@@ -213,10 +215,6 @@ class Lifespan:
     # ==============================================
     #           PLOTS CURVES
     # ==============================================
-    def plot_curves(self):
-        plt.figure(dpi=200, figsize=(7, 5))
-        self.curves.plot(legend=False)
-
     def plot_curves_residual_life(self, **kwargs):
         self.__survival_estimation.plot_residual_life(**kwargs)
         plt.ylabel("Expected residual lifespan")
@@ -355,7 +353,7 @@ class SurvivalEstimation(SurvivalCurves):
         self.__survival_d.columns = pd.to_timedelta(self.__survival_d.columns).total_seconds() / self.unit
         self.residual_survival = None
 
-    def plot_residual_life(self, sample=None, mean_behaviour=True):
+    def plot_residual_life(self, sample=None, mean_behaviour=True, unit=pd.to_timedelta(1, "D")):
         if not mean_behaviour:
             if sample is not None:
                 residual_life_ = self.residual_life.sample(sample)
@@ -369,15 +367,20 @@ class SurvivalEstimation(SurvivalCurves):
             bounds = residual_life_.columns.min(), residual_life_.columns.max()
             plt.plot(bounds, bounds[::-1], c="k", alpha=0.5, lw=2, ls="--")
         else:
-            des = self.residual_life.astype("float32").describe([0.05, .25, .5, .75, 0.95])
+            des = (self.residual_life / unit).describe([0.05, .25, .5, .75, 0.95])
             des.columns = pd.to_timedelta(self.survival_function.columns).total_seconds() / self.unit
-
+            des = des.T.dropna().T
             des = des.drop(["count", "mean", "std"])
             for i, d in enumerate(des.index):
                 c = plt.get_cmap("crest")(i / (len(des) - 1))
                 des.loc[d].plot(color=c, ax=plt.gca())
                 if i > 0:
-                    plt.fill_between(des.columns.to_list(), des.iloc[i], des.iloc[i - 1], alpha=0.2, facecolor=c)
+                    plt.fill_between(
+                        des.columns.to_list(),
+                        des.iloc[i],
+                        des.iloc[i - 1],
+                        alpha=0.2,
+                        facecolor=c)
 
             plt.grid()
             plt.legend()
