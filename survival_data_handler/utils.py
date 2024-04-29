@@ -182,7 +182,7 @@ def shift_from_interp(
     except:
         for index in df_data_date.index:
             sd = starting_dates.loc[index]
-            f = data.loc[index, "interp"]
+            f = data.loc[index, "interpolation"]
             dates = pd.to_datetime(df_data_date.columns.to_numpy()) - sd
             df_data_date.loc[index] = f(dates.astype(int))
 
