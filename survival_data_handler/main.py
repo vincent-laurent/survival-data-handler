@@ -45,7 +45,6 @@ class Lifespan(SurvivalCurves):
 
         self.__check_args()
         self.confusion_matrix_threshold = np.nan
-        self.__computed = []
         self.__supervised = False
         self.__interpolator = {}
         super().__init__(self.__tci.curve)
@@ -53,10 +52,6 @@ class Lifespan(SurvivalCurves):
     def __check_args(self):
         if hasattr(self.curves.columns, "dt"):
             ValueError("curves index must have dt property")
-
-    @property
-    def computed_historical_data(self):
-        return self.__computed
 
     @property
     def supervised(self) -> bool:
