@@ -135,11 +135,13 @@ def test_supervision(data):
     lifespan.plot_tagged_sample(on="hazard_function")
     test_is_survival_curves(lifespan.survival_function.round(3))
     lifespan.assess_metric(on="survival_function", method="roc-id")
-    lifespan.assess_metric(on="survival_function", method="roc-cd")
+    m = lifespan.assess_metric(on="survival_function", method="roc-cd")
     lifespan.assess_metric(on="survival_function", method="harrell")
     lifespan.plotly_roc_curve(on="survival_function")
     assert lifespan.supervised
     assert len(lifespan.remove_the_dead(on="survival_function")) <= len(lifespan.survival_function)
+
+    lifespan.plotly_auc_vs_score("survival_function", m)
 
 
 def test_curve_object(data):

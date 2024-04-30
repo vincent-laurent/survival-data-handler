@@ -7,7 +7,6 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 from lifelines import utils
-from sklearn import metrics as sk_metrics
 
 
 # life lines signature
@@ -67,7 +66,7 @@ def time_dependent_helper(
         function: callable,
         method: str = "harrell",
 
-):
+) -> dict:
     result = {}
 
     if method == "harrell":
@@ -111,4 +110,3 @@ def time_dependent_helper(
         except ValueError:
             pass
     return result
-

@@ -263,12 +263,12 @@ class Lifespan(SurvivalCurves):
 
         time_start, time_stop = duration.min(), duration.max()
         data = data[[c for c in data.columns if time_start <= c <= time_stop]]
-        return time_dependent_helper(
+        return pd.Series(time_dependent_helper(
             data,
             event_observed=event,
             censoring_time=duration,
             method=method,
-            function=metric)
+            function=metric))
 
     # ==============================================
     #           Properties
