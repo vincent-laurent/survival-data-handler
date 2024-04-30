@@ -33,17 +33,10 @@ class Lifespan(SurvivalCurves):
                  default_precision="float"):
 
         self.__curves = TimeCurveData(ageing_curves.__deepcopy__())
-        self.df_idx = pd.DataFrame(dict(age=age, birth=birth, index=index))
-
-        self.df_idx.index.name = self.__index
-        self.index = index
-        self.age = age
-        self.window = window
-        self.__p = default_precision
-        self.__survival_estimation = SurvivalEstimation(self.curves, unit='D', n_unit=365.25)
+        self.estimations = SurvivalEstimation(self.curves)
 
         self.__tci = TimeCurveInterpolation(
-            self.__survival_estimation.survival_function.interpolation,
+            self.estimations.survival_function.interpolation,
             birth,
             index,
             window,
@@ -51,15 +44,6 @@ class Lifespan(SurvivalCurves):
         )
 
         self.__check_args()
-
-        # self._df_idx_unique = self.df_idx.drop_duplicates(subset=["index", "birth"])
-        # self.starting_dates = self._df_idx_unique["birth"]
-        # c = ["birth", "index"]
-
-        # self._corresp = pd.merge(self._df_idx_unique[c].reset_index(), self.df_idx[c].reset_index(),
-        #                          on=["birth", "index"], suffixes=("_u", ""))
-        #
-        # self._corresp = self._corresp.drop(columns=c)
         self.confusion_matrix_threshold = np.nan
         self.__computed = []
         self.__supervised = False
@@ -67,7 +51,6 @@ class Lifespan(SurvivalCurves):
         super().__init__(self.__tci.curve)
 
     def __check_args(self):
-
         if hasattr(self.curves.columns, "dt"):
             ValueError("curves index must have dt property")
 
@@ -76,7 +59,7 @@ class Lifespan(SurvivalCurves):
         return self.__computed
 
     @property
-    def supervised(self):
+    def supervised(self) -> bool:
         return self.__supervised
 
     def add_supervision(self, event, durations, entry=None):
@@ -93,21 +76,6 @@ class Lifespan(SurvivalCurves):
             index = [i for i in ret.index if i in self.event.index]
             entry = self.entry if self.entry is None else self.entry.loc[index]
             return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
-
-    # def _decompose_unique(self, data, get_supervision=False):
-    #     ret = pd.merge(self._corresp, data, right_index=True, left_on='origin_index_u').drop(
-    #         columns=["origin_index_u"]).set_index("origin_index")
-    #
-    #     if not get_supervision:
-    #         return ret, None, None, None
-    #     else:
-    #         index = [i for i in ret.index if i in self.event.index]
-    #         entry = self.entry if self.entry is None else self.entry.loc[index]
-    #         return ret.loc[index], self.event.loc[index], self.durations.loc[index], entry
-
-    @property
-    def residual_expected_life(self) -> pd.DataFrame:
-        return self.residual_life
 
     # ==============================================
     #           ENRICH REPRESENTATION
@@ -126,7 +94,8 @@ class Lifespan(SurvivalCurves):
         dates = self.__getattribute__(on).columns.to_numpy()
         return pd.Series(dates[cond_low])
 
-    def remove_the_dead(self, data: pd.DataFrame, error="coerce"):
+    def remove_the_dead(self, on, error="coerce"):
+        data = self.__getattribute__(on)
         try:
             data = data.loc[self.event.index[~self.event.astype(bool)]]
         except KeyError as e:
@@ -193,7 +162,7 @@ class Lifespan(SurvivalCurves):
     #           PLOTS CURVES
     # ==============================================
     def plot_curves_residual_life(self, **kwargs):
-        self.__survival_estimation.plot_residual_life(**kwargs)
+        self.estimations.plot_residual_life(**kwargs)
         plt.ylabel("Expected residual lifespan")
         plt.xlabel("Time [Y]")
 
@@ -281,21 +250,25 @@ class Lifespan(SurvivalCurves):
         return plotting.auc_vs_score_plotly(temporal_scores=corresp, event_observed=event, censoring_time=duration,
                                             entry_time=entry, temporal_metric=temporal_metric, **kwargs)
 
-    @staticmethod
-    def plotly_roc_curve(roc: dict, colormap="magma_r", template="plotly_white", **kwargs):
+    def plotly_roc_curve(self, on, method="roc-cd", colormap="magma_r", template="plotly_white", **kwargs):
+        roc = self.assess_metric(on, method, metric=metrics.roc_curve)
         return plotting.plot_roc_curve_plotly(roc, colormap=colormap, template=template, **kwargs)
 
     # ==============================================
     #           METRIC ASSESSMENT
     # ==============================================
-    def assess_metric(self, data, method="roc-cd", metric=metrics.roc_auc_score):
-
-        corresp, event, duration, _ = self._decompose_unique(data, get_supervision=True)
+    def assess_metric(self, on, method="roc-cd", metric=metrics.roc_auc_score):
+        from survival_data_handler.metric import time_dependent_helper
+        data, event, duration, entry = self.__get_align_data(on, get_supervision=True)
 
         time_start, time_stop = duration.min(), duration.max()
-        corresp = corresp[[c for c in corresp.columns if time_start <= c <= time_stop]]
-        return metric.time_dependent_helper(corresp, event_observed=event, censoring_time=duration, method=method,
-                                            function=metric)
+        data = data[[c for c in data.columns if time_start <= c <= time_stop]]
+        return time_dependent_helper(
+            data,
+            event_observed=event,
+            censoring_time=duration,
+            method=method,
+            function=metric)
 
     # ==============================================
     #           Properties
@@ -315,20 +288,15 @@ class SurvivalEstimation(SurvivalCurves):
     Instantiate class with data as survival curves. Columns must be timedelta objects
     """
 
-    def __init__(self, survival_curves: pd.DataFrame, unit='D', n_unit=1., process_input_data=True):
+    def __init__(self, survival_curves: pd.DataFrame, process_input_data=True):
 
         super().__init__(survival_curves)
         survival_curves = survival_curves.__deepcopy__()
         if process_input_data:
             survival_curves = process_survival_function(survival_curves)
 
-        self.__survival = TimeCurveData(survival_curves, unit='D', n_unit=1.)
-        self.unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
+        self.__survival = TimeCurveData(survival_curves)
         self.__check_args()
-
-        self.__survival_d = self.survival_function.__deepcopy__()
-        self.__survival_d.columns = pd.to_timedelta(self.__survival_d.columns).total_seconds() / self.unit
-        self.residual_survival = None
 
     def plot_residual_life(self, sample=None, mean_behaviour=True, unit=pd.to_timedelta(1, "D")):
         if not mean_behaviour:
@@ -336,7 +304,7 @@ class SurvivalEstimation(SurvivalCurves):
                 residual_life_ = self.residual_life.sample(sample)
             else:
                 residual_life_ = self.residual_life
-            residual_life_.columns = pd.to_timedelta(self.survival_function.columns).total_seconds() / self.unit
+            residual_life_.columns = pd.to_timedelta(self.survival_function.columns).total_seconds() / unit.total_seconds()
             color = plt.get_cmap("magma_r")(residual_life_.iloc[:, 0] / residual_life_.iloc[:, 0].max())
 
             residual_life_.T.plot(legend=False, ax=plt.gca(), color=color, lw=0.15, alpha=1)
@@ -345,7 +313,7 @@ class SurvivalEstimation(SurvivalCurves):
             plt.plot(bounds, bounds[::-1], c="k", alpha=0.5, lw=2, ls="--")
         else:
             des = (self.residual_life / unit).describe([0.05, .25, .5, .75, 0.95])
-            des.columns = pd.to_timedelta(self.survival_function.columns).total_seconds() / self.unit
+            des.columns = pd.to_timedelta(self.survival_function.columns).total_seconds() / unit.total_seconds()
             des = des.T.dropna().T
             des = des.drop(["count", "mean", "std"])
             for i, d in enumerate(des.index):

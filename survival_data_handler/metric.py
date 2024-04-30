@@ -86,8 +86,10 @@ def time_dependent_helper(
 
     elif method == "roc-id":
         def outcome(t_):
-            out = np.where(censoring_time < t_, np.nan, censoring_time)
-            return (t_ == out) & event_observed
+            out = censoring_time
+            out = (t_ == out) & event_observed
+            out[censoring_time < t_] = np.nan
+            return out
 
         def marker(t_):
             return temporal_score[t_]
@@ -99,7 +101,7 @@ def time_dependent_helper(
             y_true = np.array(outcome(t))
             y_score = np.array(marker(t))
 
-            nan_ = np.isnan(y_true)
+            nan_ = np.isnan(y_true.astype(bool))
             nan_ |= np.isnan(y_score)
 
             result[t] = function(
@@ -110,23 +112,3 @@ def time_dependent_helper(
             pass
     return result
 
-
-@__validate_decorator
-def time_dependent_auc(
-        temporal_score: pd.DataFrame,
-        event_observed: iter,
-        censoring_time: iter,
-        method="harrell"
-) -> pd.Series:
-    """
-    method
-        - roc-cd : Cumulative sensitivity and dynamic specificity (C/D)
-        - roc-id : Incident sensitivity and dynamic specificity (I/D)
-    """
-    result = time_dependent_helper(
-        temporal_score,
-        event_observed,
-        censoring_time,
-        sk_metrics.roc_auc_score,
-        method)
-    return pd.Series(result, name=method)

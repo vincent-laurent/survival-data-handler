@@ -49,19 +49,17 @@ def test_utils_process(data):
 
 def test_utils_compute_derivative(data):
     _, curves = data
-    unit = pd.to_timedelta(7, unit="D").total_seconds()
-    ret = compute_derivative(curves, unit)
+    ret = compute_derivative(curves)
     assert all(pd.DataFrame(ret < 0))
 
 
 def test_survival_estimation(data):
     _, curves = data
     se = SurvivalEstimation(
-        curves.drop_duplicates(),
-        unit='D',
-        n_unit=365.25)
+        curves.drop_duplicates())
     se.plot_residual_life()
     se.plot_residual_life(mean_behaviour=False)
+    se.plot_residual_life(sample=10)
 
 
 def test_survival_estimation_attributes(data):
@@ -100,7 +98,6 @@ def test_lifespan(data):
     assert isinstance(lifespan.survival_function, pd.DataFrame)
     assert isinstance(lifespan.residual_survival(pd.to_datetime("2022")), pd.DataFrame)
     assert isinstance(lifespan.percentile_life(0.1), pd.DataFrame)
-    assert isinstance(lifespan.residual_expected_life, pd.DataFrame)
     assert isinstance(lifespan.density_function, pd.DataFrame)
     assert isinstance(lifespan.cumulative_hazard_function, pd.DataFrame)
     assert isinstance(lifespan.hazard_function, pd.DataFrame)
@@ -133,8 +130,16 @@ def test_supervision(data):
     lifespan.plot_dist_facet_grid(on="survival_function")
     lifespan.plot_tagged_sample(on="survival_function", n_sample=10)
     lifespan.plot_tagged_sample(on="survival_function", n_sample_pos=10)
-    lifespan.plot_tagged_sample(on="survival_function")
+    lifespan.plot_average_tagged(on="survival_function", event_type="censored")
+    lifespan.plot_average_tagged(on="survival_function", event_type="observed")
+    lifespan.plot_tagged_sample(on="hazard_function")
     test_is_survival_curves(lifespan.survival_function.round(3))
+    lifespan.assess_metric(on="survival_function", method="roc-id")
+    lifespan.assess_metric(on="survival_function", method="roc-cd")
+    lifespan.assess_metric(on="survival_function", method="harrell")
+    lifespan.plotly_roc_curve(on="survival_function")
+    assert lifespan.supervised
+    assert len(lifespan.remove_the_dead(on="survival_function")) <= len(lifespan.survival_function)
 
 
 def test_curve_object(data):

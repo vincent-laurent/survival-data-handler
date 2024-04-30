@@ -57,17 +57,16 @@ class TimeCurve:
 
 
 class TimeCurveData(pd.DataFrame, TimeCurve):
-    def __init__(self, *args, unit='D', n_unit=1., ):
+    def __init__(self, *args):
         super().__init__(*args)
-        self.n_unit = n_unit
-        self.unit = unit
-        self.__unit = pd.to_timedelta(n_unit, unit=unit).total_seconds()
         self.__checks()
 
     def __checks(self):
         if not all(self.columns[i] <= self.columns[i + 1] for i in range(len(self.columns) - 1)):
             raise ValueError(
-                "Columns must be sorted")  # if not isinstance(self.columns[0], pd.Timedelta):  #     raise ValueError("Columns must symbolize time index")
+                "Columns must be sorted")
+        # if not isinstance(self.columns[0], pd.Timedelta):
+        #     raise ValueError("Columns must symbolize time index")
 
     def __interpolator(self):
         self.__interpolation = {
@@ -75,7 +74,7 @@ class TimeCurveData(pd.DataFrame, TimeCurve):
             for c in self.index}
 
     def derivative(self):
-        return TimeCurveData(compute_derivative(self, self.__unit))
+        return TimeCurveData(compute_derivative(self))
 
     def log(self):
         return TimeCurveData(np.log(self))
@@ -84,20 +83,19 @@ class TimeCurveData(pd.DataFrame, TimeCurve):
         return TimeCurveData(np.exp(self))
 
     def __truediv__(self, other):
-        return TimeCurveData(pd.DataFrame(self.values / self.__other(other), columns=self.columns, index=self.index),
-                             unit=self.unit, n_unit=self.n_unit)
+        return TimeCurveData(
+            pd.DataFrame(self.values / self.__other(other), columns=self.columns, index=self.index), )
 
     def __add__(self, other):
         return TimeCurveData(pd.DataFrame(self.values + self.__other(other), columns=self.columns, index=self.index),
-                             unit=self.unit, n_unit=self.n_unit)
+                             )
 
     def __sub__(self, other):
         return TimeCurveData(pd.DataFrame(self.values - self.__other(other), columns=self.columns, index=self.index),
-                             unit=self.unit, n_unit=self.n_unit)
+                             )
 
     def __neg__(self):
-        return TimeCurveData(pd.DataFrame(-self.values, index=self.index, columns=self.columns), unit=self.unit,
-                             n_unit=self.n_unit)
+        return TimeCurveData(pd.DataFrame(-self.values, index=self.index, columns=self.columns))
 
     @property
     def interpolation(self) -> dict:
@@ -140,7 +138,6 @@ class TimeCurveInterpolation(TimeCurve):
         return pd.Series(self.__interpolation, name="interpolation")
 
     def __shift(self) -> TimeCurveData:
-
         data = pd.merge(
             self.__reduced_matching["index"].reset_index(),
             self.interpolation,

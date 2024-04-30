@@ -50,14 +50,14 @@ def process_survival_function(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def compute_derivative(data: pd.DataFrame,
-                       unit) -> pd.DataFrame:
-    times = data.columns.to_numpy()
-    diff = data.T.diff()
-    return diff.divide(
-        pd.Series(times, index=times).diff().dt.total_seconds() / unit,
-        axis=0
-    ).T
+def compute_derivative(data: pd.DataFrame) -> pd.DataFrame:
+    timestamp = data.columns.to_series().diff()
+    if hasattr(timestamp, "dt"):
+        dt = timestamp.dt.total_seconds()
+    else:
+        dt = timestamp
+
+    return data.diff(axis=1) / dt
 
 
 def _cut(x):
