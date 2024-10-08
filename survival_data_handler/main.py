@@ -29,29 +29,39 @@ event_observed_color = cmap(0.95)
 class Lifespan(SurvivalCurves):
     __index = "origin_index"
 
-    def __init__(self, ageing_curves: pd.DataFrame, index: iter, age: iter, birth: iter, window: tuple,
-                 default_precision="float"):
-
+    def __init__(
+            self,
+            ageing_curves: pd.DataFrame,
+            index: iter,
+            window: tuple,
+            age: iter = None,
+            birth: iter = None,
+            default_precision="float",
+            time_delta=pd.to_timedelta(30, "D")):
+        self.__age = age
+        self.__birth = birth
         self.__curves = TimeCurveData(ageing_curves.__deepcopy__())
-        self.estimations = SurvivalEstimation(self.curves)
 
+        self.estimations = SurvivalEstimation(self.curves)
         self.__tci = TimeCurveInterpolation(
             self.estimations.survival_function.interpolation,
             birth,
             index,
             window,
-            pd.to_timedelta(30, "D")
+            time_delta
         )
 
-        self.__check_args()
         self.confusion_matrix_threshold = np.nan
         self.__supervised = False
         self.__interpolator = {}
+        self.__check_args()
         super().__init__(self.__tci.curve)
 
     def __check_args(self):
         if hasattr(self.curves.columns, "dt"):
-            ValueError("curves index must have dt property")
+            raise ValueError("curves index must have dt property")
+        if self.__age is None and self.__birth is None:
+            raise ValueError("age or birth : one of them must be set")
 
     @property
     def supervised(self) -> bool:
@@ -79,7 +89,7 @@ class Lifespan(SurvivalCurves):
     def residual_survival(self, t0) -> pd.DataFrame:
 
         t0 = max(t0, self.survival_function.columns[0])
-        s0 = get(self.survival_function, t0).astype("float16").values
+        s0 = _get(self.survival_function, t0).astype("float16").values
         df = self.survival_function.divide(s0, axis=0).copy()
         df = df[[c for c in df.columns if c > t0]]
         return df
@@ -273,7 +283,7 @@ class Lifespan(SurvivalCurves):
         return self.__curves
 
 
-def get(data: pd.DataFrame, date):
+def _get(data: pd.DataFrame, date):
     search = np.searchsorted(data.columns.to_list(), date)
     return data.iloc[:, search]
 

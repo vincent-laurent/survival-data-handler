@@ -201,3 +201,20 @@ def test_interpolation_curves(data):
     assert len(ti.unique_curve) <= len(rossi)
     assert len(ti.curve) == len(rossi)
 
+
+def test_check_args(data):
+    rossi, curves = data
+    rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
+    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
+    birth = pd.to_datetime('2000')
+    rossi["index"] = rossi.index
+
+    with pytest.raises(ValueError) as error:
+        Lifespan(
+            curves,
+            index=rossi["index"],
+            birth=None,
+            age=None,
+            window=(pd.to_datetime("2000"), pd.to_datetime("2001"))
+        )
+    assert "age or birth" in str(error.value)
