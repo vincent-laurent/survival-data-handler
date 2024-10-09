@@ -208,8 +208,6 @@ def test_interpolation_curves(data):
 def test_check_args(data):
     rossi, curves = data
     rossi["duration"] = pd.to_timedelta(rossi["week"]*7, unit="D")
-    age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
-    birth = pd.to_datetime('2000')
     rossi["index"] = rossi.index
     index = rossi["index"]
     with pytest.raises(ValueError) as error:
