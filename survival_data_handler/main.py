@@ -144,7 +144,7 @@ class Lifespan(SurvivalCurves):
             args = real_life_events[c][~nan[c]].astype(bool), predicted_events[c][~nan[c]].astype(bool)
 
             df_matrix.loc[c] = metrics.confusion_matrix(*args).ravel()
-
+        df_matrix = df_matrix.astype(float)
         tn, fp, fn, tp = df_matrix["TN"], df_matrix["FP"], df_matrix["FN"], df_matrix["TP"]
 
         df_matrix["P"] = p = tp + fn
@@ -152,14 +152,12 @@ class Lifespan(SurvivalCurves):
         df_matrix["Total"] = p + n
         df_matrix["accuracy"] = (tp + tn) / (p + n)
 
-        if all(tp + fp > 0) and all(tp + fn > 0):
-            df_matrix["precision"] = precision = np.divide(tp, tp + fp)
+        df_matrix["precision"] = precision = np.divide(tp, tp + fp)
 
-            df_matrix["recall"] = recall = np.divide(tp, tp + fn)
+        df_matrix["recall"] = recall = np.divide(tp, tp + fn)
 
-            if all(recall > 0) and all(precision > 0):
-                df_matrix["f1-score"] = 2 * recall * precision / (recall + precision)
-                df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (2 ** 2 * precision + recall)
+        df_matrix["f1-score"] = 2 * recall * precision / (recall + precision)
+        df_matrix["f2-score"] = (1 + 2) ** 2 * recall * precision / (2 ** 2 * precision + recall)
 
         return df_matrix
 

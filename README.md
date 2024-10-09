@@ -49,16 +49,33 @@ lifespan = Lifespan(
 )
 ```
 
-Ajoutons maintenant les données de supervision (sous forme de durée)
+
+We now add the supervision data (in the form of duration)
 
 ```python    
 lifespan.add_supervision(
     event=rossi["arrest"],                                      # True if the data is observed False, when censored
-    durations=pd.to_timedelta(rossi["week"] * 7, unit="D")      # The duration
+    durations=rossi["duration"] + birth      # The duration
 )
 ```
-Calculons la performance associée
+Let's calculate the associated performance
+
 ```python
 
-lifespan.assess_metric("survival")
+lifespan.assess_metric("survival_function")
 ```
+
+| Date       | Performance (1 - AUC) |
+|------------|-----------------------|
+| 2000-01-31 | 0.468458              |
+| 2000-03-01 | 0.384425              |
+| 2000-03-31 | 0.432012              |
+| 2000-04-30 | 0.357338              |
+| 2000-05-30 | 0.365263              |
+| 2000-06-29 | 0.365190              |
+| 2000-07-29 | 0.371438              |
+| 2000-08-28 | 0.343447              |
+| 2000-09-27 | 0.340607              |
+| 2000-10-27 | 0.344628              |
+| 2000-11-26 | 0.334398              |
+| 2000-12-26 | 0.334444              |

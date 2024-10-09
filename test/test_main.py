@@ -122,13 +122,16 @@ def test_supervision(data):
         age=age,
         window=(pd.to_datetime("2000"), pd.to_datetime("2001"))
     )
-    lifespan.add_supervision(durations=rossi["duration"] + birth, event=rossi["arrest"])
+    event = pd.Series(np.random.uniform(size=len(rossi)) > 0.5, index=rossi.index)
+    lifespan.add_supervision(durations=rossi["duration"] + birth, event=event)
 
     lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2)
+    lifespan.compute_confusion_matrix(on="survival_function", threshold=0.2, score=True)
     lifespan.plot_average_tagged(on="survival_function")
     lifespan.plot_average_tagged(on="survival_function", plot_test_window=True, plot_type=None)
     lifespan.plot_dist_facet_grid(on="survival_function")
     lifespan.plot_tagged_sample(on="survival_function", n_sample=10)
+    lifespan.plot_tagged_sample(on="survival_function")
     lifespan.plot_tagged_sample(on="survival_function", n_sample_pos=10)
     lifespan.plot_average_tagged(on="survival_function", event_type="censored")
     lifespan.plot_average_tagged(on="survival_function", event_type="observed")
@@ -208,13 +211,14 @@ def test_check_args(data):
     age = pd.to_timedelta(rossi["age"] * 365.25, unit="D")
     birth = pd.to_datetime('2000')
     rossi["index"] = rossi.index
-
+    index = rossi["index"]
     with pytest.raises(ValueError) as error:
         Lifespan(
             curves,
-            index=rossi["index"],
+            index=index,
             birth=None,
             age=None,
             window=(pd.to_datetime("2000"), pd.to_datetime("2001"))
         )
     assert "age or birth" in str(error.value)
+    assert index.name == rossi["index"].name
